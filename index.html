@@ -1,0 +1,2005 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Evolução de Pacientes - Terminal Med</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg width='256' height='256' viewBox='0 0 256 256' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='256' height='256' fill='black'/%3E%3Cpath d='M32 128H80L90 108L100 148L115 68L130 188L176 128' stroke='%234ade80' stroke-width='16' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='184' y='104' width='16' height='48' fill='%234ade80' rx='4'/%3E%3C/svg%3E" type="image/svg+xml">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Fira Code', monospace;
+      }
+      @keyframes blink {
+        50% { opacity: 0; }
+      }
+      .cursor-blink {
+        animation: blink 1s step-end infinite;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.0/client",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
+    "chart.js/auto": "https://aistudiocdn.com/chart.js@^4.5.1/auto",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.5.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "chart.js/": "https://aistudiocdn.com/chart.js@^4.5.1/"
+  }
+}
+</script>
+  <!-- Babel para transpilar JSX no navegador -->
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+</head>
+  <body class="bg-black">
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+// ===================================================================
+// IMPORTAÇÕES E CONFIGURAÇÃO
+// ===================================================================
+import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom/client';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, getDocs, doc, addDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import Chart from 'chart.js/auto';
+import { GoogleGenAI, Type } from "@google/genai";
+
+// ===================================================================
+// CHAVE DE API DO GOOGLE AI - AÇÃO NECESSÁRIA
+// ===================================================================
+// IMPORTANTE: Para que a análise com I.A. funcione, você precisa
+// de uma chave de API do Google AI Studio.
+// 1. Obtenha sua chave em: https://aistudio.google.com/app/apikey
+// 2. Cole a chave na linha abaixo, substituindo "SUA_CHAVE_API_AQUI".
+const API_KEY = "SUA_CHAVE_API_AQUI";
+// ===================================================================
+
+
+// ===================================================================
+// DEFINIÇÕES DE TIPOS (de types.ts)
+// ===================================================================
+var View;
+(function (View) {
+    View[View["PATIENT_LIST"] = 0] = "PATIENT_LIST";
+    View[View["PATIENT_DETAIL"] = 1] = "PATIENT_DETAIL";
+    View[View["NEW_PATIENT_FORM"] = 2] = "NEW_PATIENT_FORM";
+    View[View["NEW_EVOLUTION_FORM"] = 3] = "NEW_EVOLUTION_FORM";
+    View[View["GOALS_FORM"] = 4] = "GOALS_FORM";
+    View[View["ARCHIVED_LIST"] = 5] = "ARCHIVED_LIST";
+    View[View["ANALYSIS_MODAL"] = 6] = "ANALYSIS_MODAL";
+    View[View["EDIT_PATIENT_FORM"] = 7] = "EDIT_PATIENT_FORM";
+    View[View["CAMERA_VIEW"] = 8] = "CAMERA_VIEW";
+    View[View["EVOLUTION_CAMERA_VIEW"] = 9] = "EVOLUTION_CAMERA_VIEW";
+    View[View["WHITEBOARD_VIEW"] = 10] = "WHITEBOARD_VIEW";
+    View[View["EDIT_EVOLUTION_FORM"] = 11] = "EDIT_EVOLUTION_FORM";
+})(View || (View = {}));
+
+
+// ===================================================================
+// CONFIGURAÇÃO DO FIREBASE (de firebase/config.ts)
+// ===================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyA4bis9CVQkl1eJDfezsvUKTx1X_kFVT4M",
+  authDomain: "axon-91d0b.firebaseapp.com",
+  projectId: "axon-91d0b",
+  storageBucket: "axon-91d0b.firebasestorage.app",
+  messagingSenderId: "701115983749",
+  appId: "1:701115983749:web:9a57928b678918ffbb86ec"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+
+// ===================================================================
+// SERVIÇO DO IMGUR (de services/imgurService.ts)
+// ===================================================================
+const IMGUR_CLIENT_ID = '4ae8b96c539d446';
+const IMGUR_API_URL = 'https://api.imgur.com/3/image';
+
+const uploadImage = async (base64Image) => {
+    const base64Data = base64Image.split(',')[1];
+    const formData = new FormData();
+    formData.append('image', base64Data);
+    try {
+        const response = await fetch(IMGUR_API_URL, {
+            method: 'POST',
+            headers: { Authorization: `Client-ID ${IMGUR_CLIENT_ID}` },
+            body: formData,
+        });
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Imgur API Error:', errorData);
+            throw new Error(`Imgur upload failed: ${errorData.data.error}`);
+        }
+        const result = await response.json();
+        if (result.success) {
+            return result.data.link;
+        } else {
+            throw new Error('Imgur upload was not successful.');
+        }
+    } catch (error) {
+        console.error('Error uploading image to Imgur:', error);
+        throw error;
+    }
+};
+
+
+// ===================================================================
+// COMPONENTES REACT
+// ===================================================================
+
+const BlinkingCursor = () => {
+  return <span className="inline-block w-2 h-5 bg-green-400 ml-1 cursor-blink" />;
+};
+
+const TerminalWindow = ({ title, children }) => {
+  return (
+    <div className="border-2 border-green-500 shadow-lg shadow-green-500/20 max-w-4xl mx-auto h-full flex flex-col">
+      <div className="bg-green-700 text-black px-4 py-1 flex justify-between items-center flex-shrink-0">
+        <p className="font-bold">{title}</p>
+        <div className="flex space-x-2">
+          <span className="w-3 h-3 bg-gray-900 block rounded-full"></span>
+          <span className="w-3 h-3 bg-gray-900 block rounded-full"></span>
+          <span className="w-3 h-3 bg-gray-900 block rounded-full"></span>
+        </div>
+      </div>
+      <div className="p-4 flex-grow min-h-0 flex flex-col">
+        {children}
+      </div>
+    </div>
+  );
+};
+
+const PatientList = ({
+  patients,
+  onSelectPatient,
+  onNewPatient,
+  onManageGoals,
+  onShowArchived,
+  onOpenCamera,
+  onBackToActive,
+  isArchivedView = false,
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const filteredPatients = patients.filter(p =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex-shrink-0">
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center">
+              <h1 className="text-2xl font-bold">{isArchivedView ? 'Pacientes Arquivados' : 'Lista de Pacientes'}</h1>
+              <BlinkingCursor />
+          </div>
+          {!isArchivedView && (
+              <div className="flex items-center space-x-2">
+                  {onOpenCamera && (
+                      <button
+                          onClick={onOpenCamera}
+                          className="p-2 text-green-400 hover:bg-green-900/50 rounded-lg transition-colors duration-200"
+                          title="Cadastrar Pacientes por Câmera"
+                          aria-label="Cadastrar Pacientes por Câmera com I.A."
+                      >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                      </button>
+                  )}
+                  {onShowArchived && (
+                      <button
+                          onClick={onShowArchived}
+                          className="p-2 text-green-400 hover:bg-green-900/50 rounded-lg transition-colors duration-200"
+                          title="Ver Pacientes Arquivados"
+                          aria-label="Ver Pacientes Arquivados"
+                      >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 001.414 0l2.414-2.414a1 1 0 01.707-.293H20" />
+                          </svg>
+                      </button>
+                  )}
+              </div>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <input
+            type="search"
+            placeholder="Procurar paciente por nome..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="bg-gray-900 border border-green-600 text-green-400 focus:ring-green-500 focus:border-green-500 block w-full p-2.5 placeholder-green-700"
+          />
+        </div>
+      </div>
+
+      <div className="flex-grow overflow-y-auto">
+        {filteredPatients.map((patient) => (
+          <div
+            key={patient.id}
+            className="relative border-b border-green-800 py-3 px-2 cursor-pointer hover:bg-green-900/50"
+            onClick={() => onSelectPatient(patient.id)}
+          >
+            {patient.status === 'discharged' && (
+                <div className="absolute top-0 right-0 p-2">
+                    <span className="text-xs bg-green-700 text-black font-bold px-2 py-1 rounded">
+                      RECEBEU ALTA
+                    </span>
+                </div>
+            )}
+             {patient.status === 'archived' && (
+                 <div className="absolute top-0 right-0 p-2">
+                    <span className="text-xs bg-gray-600 text-black font-bold px-2 py-1 rounded">
+                      ARQUIVADO
+                    </span>
+                </div>
+            )}
+            <p className={`text-lg font-semibold pr-28 ${patient.status === 'discharged' ? 'line-through' : ''}`}>
+              {patient.name}
+            </p>
+            <p className="text-sm text-green-300">
+              Quarto: {patient.room} | Leito: {patient.bed}
+            </p>
+            <p className="text-sm text-green-300">
+              Idade: {patient.age} | Admissão: {new Date(patient.admissionDate).toLocaleDateString('pt-BR')}
+            </p>
+          </div>
+        ))}
+         {filteredPatients.length === 0 && <p>Nenhum paciente encontrado.</p>}
+      </div>
+
+      <div className="flex-shrink-0 pt-4 space-y-4">
+        {!isArchivedView ? (
+          <>
+            <button
+              onClick={onNewPatient}
+              className="w-full bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded transition-colors duration-200"
+            >
+              Criar Novo Paciente
+            </button>
+            <button
+              onClick={onManageGoals}
+              className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 px-4 border-b-4 border-yellow-800 hover:border-yellow-600 rounded transition-colors duration-200"
+            >
+              Metas
+            </button>
+          </>
+        ) : (
+            <button
+              onClick={onBackToActive}
+              className="w-full bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded transition-colors duration-200"
+            >
+              Voltar para Lista Ativa
+            </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const PhotoModal = ({ photoUrl, onClose }) => {
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="relative max-w-4xl max-h-[90vh] p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img 
+          src={photoUrl} 
+          alt="Visualização ampliada" 
+          className="max-w-full max-h-full object-contain"
+        />
+        <button 
+          onClick={onClose}
+          className="absolute top-4 right-4 bg-green-700 text-black rounded-full w-8 h-8 flex items-center justify-center font-bold text-lg"
+          aria-label="Fechar"
+        >
+          &times;
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const PatientDetail = ({ patient, onBack, onNewEvolution, onDischarge, onArchive, onUnarchive, onUpdateEvolutions, onAnalyze, onEdit, onDelete, onEditEvolution }) => {
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+
+  const handleRemovePhoto = (evolutionId, photoIndex) => {
+    const updatedEvolutions = patient.evolutions.map(evo => {
+      if (evo.id === evolutionId) {
+        const updatedPhotos = evo.photos?.filter((_, index) => index !== photoIndex);
+        return { ...evo, photos: updatedPhotos };
+      }
+      return evo;
+    });
+    onUpdateEvolutions(patient.id, updatedEvolutions);
+  };
+  
+  const handleDeleteClick = () => {
+    onDelete(patient.id);
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+       {selectedPhoto && <PhotoModal photoUrl={selectedPhoto} onClose={() => setSelectedPhoto(null)} />}
+      
+      <div className="flex-shrink-0 pr-2 mb-4">
+        <div className="flex justify-between items-start mb-2">
+            <h1 className="text-2xl font-bold">{patient.name}</h1>
+             <div className="flex items-center space-x-2">
+                {patient.status === 'active' && (
+                    <>
+                        <button 
+                            onClick={() => onEdit(patient.id)} 
+                            className="p-2 text-yellow-400 hover:bg-yellow-900/50 rounded-lg transition-colors duration-200"
+                            title="Editar Paciente"
+                            aria-label="Editar dados do paciente"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" />
+                            </svg>
+                        </button>
+                        <button 
+                            onClick={onDischarge} 
+                            className="p-2 text-blue-400 hover:bg-blue-900/50 rounded-lg transition-colors duration-200"
+                            title="Dar Alta"
+                            aria-label="Dar Alta ao paciente"
+                        >
+                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </button>
+                        <button 
+                            onClick={onAnalyze} 
+                            className="p-2 text-cyan-400 hover:bg-cyan-900/50 rounded-lg transition-colors duration-200"
+                            title="Análise I.A"
+                            aria-label="Analisar evolução com Inteligência Artificial"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                               <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                            </svg>
+                        </button>
+                    </>
+                )}
+                 <button 
+                    onClick={handleDeleteClick} 
+                    className="p-2 text-red-500 hover:bg-red-900/50 rounded-lg transition-colors duration-200"
+                    title="Apagar Paciente"
+                    aria-label="Apagar paciente permanentemente"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <p>Quarto: {patient.room} | Leito: {patient.bed}</p>
+        <p>Idade: {patient.age} anos</p>
+        <p>Admissão: {new Date(patient.admissionDate).toLocaleDateString('pt-BR')}</p>
+        {patient.goal && <p className="mt-2 text-yellow-300"><strong>Meta:</strong> {patient.goal}</p>}
+      </div>
+
+      <div className="flex-grow overflow-y-auto pr-2">
+        <h2 className="text-xl font-semibold border-b-2 border-green-700 mb-4 pb-1">Evoluções</h2>
+        <div className="space-y-6">
+          {patient.evolutions.length > 0 ? (
+            patient.evolutions.map((evo) => (
+              <div key={evo.id} className="border border-green-800 p-3">
+                <div className="flex justify-between items-center mb-2">
+                    <p className="font-bold text-lg">
+                        {new Date(evo.date).toLocaleString('pt-BR')}
+                    </p>
+                    <button
+                        onClick={() => onEditEvolution(evo.id)}
+                        className="p-1 text-yellow-400 hover:bg-yellow-900/50 rounded-lg transition-colors duration-200"
+                        title="Editar Evolução"
+                        aria-label="Editar esta evolução"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" />
+                        </svg>
+                    </button>
+                </div>
+
+                {evo.freeText && (
+                    <div className="mb-3 p-3 bg-gray-900/50 border-l-4 border-green-600">
+                        <h3 className="font-semibold text-green-300">Evolução Livre</h3>
+                        <p className="whitespace-pre-wrap">{evo.freeText}</p>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3 text-sm">
+                    <div><strong>FC:</strong> {evo.vitalSigns.heartRate}</div>
+                    <div><strong>PA:</strong> {evo.vitalSigns.bloodPressure}</div>
+                    <div><strong>FR:</strong> {evo.vitalSigns.respiratoryRate}</div>
+                    <div><strong>Temp:</strong> {evo.vitalSigns.temperature}</div>
+                    <div><strong>SatO₂:</strong> {evo.vitalSigns.oxygenSaturation}</div>
+                </div>
+                <p><strong>Cardiovascular:</strong> {evo.assessment.cardiovascular}</p>
+                <p><strong>Respiratório:</strong> {evo.assessment.respiratory}</p>
+                <p><strong>Digestório:</strong> {evo.assessment.digestive}</p>
+                <p><strong>Neurológico:</strong> {evo.assessment.neurological}</p>
+                <p className="mt-2 pt-2 border-t border-green-900"><strong>Notas:</strong> {evo.notes}</p>
+                {evo.photos && evo.photos.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-green-900">
+                      <p><strong>Fotos:</strong></p>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                          {evo.photos.map((photo, index) => (
+                             <div key={index} className="relative group">
+                                  <img src={photo} alt={`Evolução ${index + 1}`} className="w-24 h-24 object-cover border-2 border-green-800 rounded cursor-pointer" onClick={() => setSelectedPhoto(photo)} />
+                                  <button onClick={() => handleRemovePhoto(evo.id, index)} className="absolute top-0 right-0 bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-sm font-bold">
+                                      X
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <p>Nenhuma evolução registrada para este paciente.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-shrink-0 pt-4">
+        {patient.status === 'active' ? (
+          <div className="flex flex-col space-y-4">
+             <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                <button
+                onClick={onNewEvolution}
+                className="w-full sm:w-auto flex-grow bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded transition-colors duration-200"
+                >
+                Registrar Nova Evolução
+                </button>
+             </div>
+            <button
+              onClick={onBack}
+              className="w-full bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded transition-colors duration-200"
+            >
+              Voltar
+            </button>
+          </div>
+        ) : patient.status === 'discharged' ? (
+            <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                <p className="text-center text-lg font-bold p-3 bg-green-900/50 border border-green-700 rounded flex-grow">
+                    Paciente recebeu alta.
+                </p>
+                <button
+                    onClick={onArchive}
+                    className="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-black font-bold py-3 px-4 border-b-4 border-purple-800 hover:border-purple-600 rounded transition-colors duration-200"
+                >
+                    Arquivar Paciente
+                </button>
+                <button
+                    onClick={onBack}
+                    className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded transition-colors duration-200"
+                >
+                    Voltar
+                </button>
+            </div>
+        ) : (
+          <div className="space-y-4">
+             <p className="text-center text-xl font-bold p-4 bg-gray-900/50 border border-gray-700 rounded">
+                Paciente arquivado.
+            </p>
+            <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                <button
+                    onClick={onUnarchive}
+                    className="w-full sm:w-auto flex-grow bg-blue-600 hover:bg-blue-500 text-black font-bold py-3 px-4 border-b-4 border-blue-800 hover:border-blue-600 rounded transition-colors duration-200"
+                >
+                    Desarquivar Paciente
+                </button>
+                <button
+                  onClick={onBack}
+                  className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded"
+                >
+                  Voltar para a Lista
+                </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const PatientForm = ({ onSubmit, onCancel, patientToEdit }) => {
+  const [name, setName] = useState(patientToEdit?.name || '');
+  const [age, setAge] = useState(patientToEdit?.age.toString() || '');
+  const [admissionDate, setAdmissionDate] = useState(patientToEdit?.admissionDate || new Date().toISOString().split('T')[0]);
+  const [room, setRoom] = useState(patientToEdit?.room || '');
+  const [bed, setBed] = useState(patientToEdit?.bed || '');
+
+  const isEditMode = !!patientToEdit;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (name && age && admissionDate && room && bed) {
+      onSubmit({ name: name, age: parseInt(age, 10), admissionDate, room, bed });
+    }
+  };
+  
+  const commonInputClasses = "bg-gray-900 border border-green-600 text-green-400 focus:ring-green-500 focus:border-green-500 block w-full p-2.5 placeholder-green-700";
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col h-full">
+      <div className="flex-shrink-0">
+        <h1 className="text-2xl font-bold mb-6">{isEditMode ? 'Editar Paciente' : 'Novo Paciente'}</h1>
+      </div>
+
+      <div className="flex-grow overflow-y-auto pr-2 space-y-6">
+        <div>
+          <label htmlFor="name" className="block mb-2 text-lg font-medium">Nome do Paciente</label>
+          <input
+            type="text"
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={commonInputClasses}
+            required
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+              <label htmlFor="age" className="block mb-2 text-lg font-medium">Idade</label>
+              <input type="number" id="age" value={age} onChange={(e) => setAge(e.target.value)} className={commonInputClasses} required />
+          </div>
+          <div>
+              <label htmlFor="admissionDate" className="block mb-2 text-lg font-medium">Data de Admissão</label>
+              <input type="date" id="admissionDate" value={admissionDate} onChange={(e) => setAdmissionDate(e.target.value)} className={commonInputClasses} required />
+          </div>
+          <div>
+              <label htmlFor="room" className="block mb-2 text-lg font-medium">Quarto</label>
+              <input type="text" id="room" value={room} onChange={(e) => setRoom(e.target.value)} className={commonInputClasses} required />
+          </div>
+          <div>
+              <label htmlFor="bed" className="block mb-2 text-lg font-medium">Leito</label>
+              <input type="text" id="bed" value={bed} onChange={(e) => setBed(e.target.value)} className={commonInputClasses} required />
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex-shrink-0 pt-4">
+        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+            <button
+            type="submit"
+            className="w-full flex-grow bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded"
+            >
+            {isEditMode ? 'Salvar Alterações' : 'Salvar Paciente'}
+            </button>
+            <button
+            type="button"
+            onClick={onCancel}
+            className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded"
+            >
+            Cancelar
+            </button>
+        </div>
+      </div>
+    </form>
+  );
+};
+
+const EvolutionForm = ({ 
+    patientName, 
+    onSubmit, 
+    onCancel, 
+    onOpenCamera, 
+    onOpenWhiteboard, 
+    initialData, 
+    onDataParsed,
+    evolutionToEdit 
+}) => {
+  const [vitalSigns, setVitalSigns] = useState({
+    heartRate: '', bloodPressure: '', respiratoryRate: '', temperature: '', oxygenSaturation: '',
+  });
+  const [assessment, setAssessment] = useState({
+    cardiovascular: '', respiratory: '', digestive: '', neurological: '',
+  });
+  const [notes, setNotes] = useState('');
+  const [freeText, setFreeText] = useState('');
+  const [photos, setPhotos] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const isEditMode = !!evolutionToEdit;
+
+  useEffect(() => {
+    if (evolutionToEdit) {
+        setVitalSigns(evolutionToEdit.vitalSigns);
+        setAssessment(evolutionToEdit.assessment);
+        setNotes(evolutionToEdit.notes);
+        setFreeText(evolutionToEdit.freeText || '');
+        setPhotos(evolutionToEdit.photos || []);
+    }
+  }, [evolutionToEdit]);
+
+  useEffect(() => {
+    if (initialData && onDataParsed) {
+      setVitalSigns(prev => ({ ...prev, ...initialData.vitalSigns }));
+      setAssessment(prev => ({ ...prev, ...initialData.assessment }));
+      setNotes(initialData.notes || '');
+      setFreeText(initialData.freeText || '');
+      onDataParsed();
+    }
+  }, [initialData, onDataParsed]);
+
+
+  const handlePhotoChange = async (e) => {
+    if (e.target.files) {
+        setIsUploading(true);
+        const files = Array.from(e.target.files);
+        try {
+            const uploadPromises = files.map((file) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = async () => {
+                        try {
+                            const base64 = reader.result;
+                            const imgurUrl = await uploadImage(base64);
+                            resolve(imgurUrl);
+                        } catch (uploadError) {
+                            reject(uploadError);
+                        }
+                    };
+                    reader.onerror = error => reject(error);
+                    reader.readAsDataURL(file);
+                });
+            });
+            const imgurUrls = await Promise.all(uploadPromises);
+            setPhotos(prev => [...prev, ...imgurUrls]);
+        } catch (error) {
+            console.error("Error uploading photos:", error);
+            alert("Falha no upload de uma ou mais imagens.");
+        } finally {
+            setIsUploading(false);
+            e.target.value = '';
+        }
+    }
+  };
+
+  const handleRemovePhoto = (indexToRemove) => {
+    setPhotos(prev => prev.filter((_, index) => index !== indexToRemove));
+  };
+
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit({ vitalSigns, assessment, notes, photos, freeText });
+  };
+  
+  const commonInputClasses = "bg-gray-900 border border-green-600 text-green-400 focus:ring-green-500 focus:border-green-500 block w-full p-2.5 placeholder-green-700";
+  const commonTextareaClasses = `${commonInputClasses} h-24`;
+  const fieldsetClasses = "border border-green-700 p-4 space-y-4";
+  const legendClasses = "text-xl font-semibold px-2";
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col h-full">
+      <div className="flex-shrink-0 flex justify-between items-center">
+        <h1 className="text-2xl font-bold mb-4">{isEditMode ? 'Editar Evolução' : 'Nova Evolução'}: {patientName}</h1>
+        {!isEditMode && onOpenCamera && onOpenWhiteboard && (
+            <div className="flex items-center space-x-2">
+                <button
+                    type="button"
+                    onClick={onOpenWhiteboard}
+                    className="p-2 mb-4 text-green-400 hover:bg-green-900/50 rounded-lg transition-colors duration-200"
+                    title="Escrever Evolução na Lousa"
+                    aria-label="Escrever Evolução na Lousa Digital"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                </button>
+                <button
+                    type="button"
+                    onClick={onOpenCamera}
+                    className="p-2 mb-4 text-green-400 hover:bg-green-900/50 rounded-lg transition-colors duration-200"
+                    title="Digitalizar Evolução com Câmera"
+                    aria-label="Digitalizar Evolução com Câmera I.A."
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                </button>
+            </div>
+        )}
+      </div>
+
+      <div className="flex-grow overflow-y-auto pr-2">
+        <div className="space-y-8">
+            <fieldset className={fieldsetClasses}>
+                <legend className={legendClasses}>Evolução Livre</legend>
+                <textarea 
+                  placeholder="Descreva a evolução do paciente aqui..." 
+                  value={freeText} 
+                  onChange={(e) => setFreeText(e.target.value)} 
+                  className={`${commonInputClasses} h-40`}
+                ></textarea>
+            </fieldset>
+
+            <fieldset className={fieldsetClasses}>
+                <legend className={legendClasses}>Dados Vitais</legend>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input type="text" placeholder="Frequência Cardíaca (bpm)" value={vitalSigns.heartRate} onChange={(e) => setVitalSigns({ ...vitalSigns, heartRate: e.target.value })} className={commonInputClasses} />
+                <input type="text" placeholder="Pressão Arterial (mmHg)" value={vitalSigns.bloodPressure} onChange={(e) => setVitalSigns({ ...vitalSigns, bloodPressure: e.target.value })} className={commonInputClasses} />
+                <input type="text" placeholder="Frequência Respiratória (rpm)" value={vitalSigns.respiratoryRate} onChange={(e) => setVitalSigns({ ...vitalSigns, respiratoryRate: e.target.value })} className={commonInputClasses} />
+                <input type="text" placeholder="Temperatura (°C)" value={vitalSigns.temperature} onChange={(e) => setVitalSigns({ ...vitalSigns, temperature: e.target.value })} className={commonInputClasses} />
+                <input type="text" placeholder="Saturação de O₂ (%)" value={vitalSigns.oxygenSaturation} onChange={(e) => setVitalSigns({ ...vitalSigns, oxygenSaturation: e.target.value })} className={commonInputClasses} />
+                </div>
+            </fieldset>
+            
+            <fieldset className={fieldsetClasses}>
+                <legend className={legendClasses}>Avaliação de Sistemas</legend>
+                <textarea placeholder="Sistema Cardiovascular" value={assessment.cardiovascular} onChange={(e) => setAssessment({ ...assessment, cardiovascular: e.target.value })} className={commonTextareaClasses}></textarea>
+                <textarea placeholder="Sistema Respiratório" value={assessment.respiratory} onChange={(e) => setAssessment({ ...assessment, respiratory: e.target.value })} className={commonTextareaClasses}></textarea>
+                <textarea placeholder="Sistema Digestório" value={assessment.digestive} onChange={(e) => setAssessment({ ...assessment, digestive: e.target.value })} className={commonTextareaClasses}></textarea>
+                <textarea placeholder="Sistema Neurológico" value={assessment.neurological} onChange={(e) => setAssessment({ ...assessment, neurological: e.target.value })} className={commonTextareaClasses}></textarea>
+            </fieldset>
+
+            <fieldset className={fieldsetClasses}>
+                <legend className={legendClasses}>Fotos</legend>
+                <input type="file" multiple accept="image/*" onChange={handlePhotoChange} disabled={isUploading} className={`${commonInputClasses} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-700 file:text-black hover:file:bg-green-600 disabled:opacity-50`}/>
+                {isUploading && <p className="text-yellow-400">Enviando imagens...</p>}
+                {photos.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                        {photos.map((photo, index) => (
+                            <div key={index} className="relative group">
+                            <img src={photo} alt={`Preview ${index + 1}`} className="w-24 h-24 object-cover border border-green-700 rounded" />
+                            <button type="button" onClick={() => handleRemovePhoto(index)} className="absolute top-0 right-0 bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-sm font-bold">
+                                X
+                            </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </fieldset>
+
+            <fieldset className={fieldsetClasses}>
+                <legend className={legendClasses}>Notas Adicionais</legend>
+                <textarea placeholder="Observações e plano..." value={notes} onChange={(e) => setNotes(e.target.value)} className={commonTextareaClasses}></textarea>
+            </fieldset>
+        </div>
+      </div>
+      
+      <div className="flex-shrink-0 pt-4">
+        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+            <button type="submit" className="w-full flex-grow bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded" disabled={isUploading}>
+            {isUploading ? 'Enviando Imagens...' : (isEditMode ? 'Salvar Alterações' : 'Salvar Evolução')}
+            </button>
+            <button type="button" onClick={onCancel} className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded">
+            Cancelar
+            </button>
+        </div>
+      </div>
+    </form>
+  );
+};
+
+const GoalsForm = ({ patients, onSave, onCancel }) => {
+  const [goals, setGoals] = useState({});
+
+  useEffect(() => {
+    const initialGoals = patients.reduce((acc, p) => {
+        acc[p.id] = p.goal || '';
+        return acc;
+    }, {});
+    setGoals(initialGoals);
+  }, [patients]);
+
+  const handleGoalChange = (patientId, value) => {
+    setGoals(prev => ({...prev, [patientId]: value}));
+  };
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(goals);
+  };
+
+  const commonInputClasses = "bg-gray-900 border border-green-600 text-green-400 focus:ring-green-500 focus:border-green-500 block w-full p-2.5 placeholder-green-700";
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col h-full">
+      <div className="flex-shrink-0">
+        <h1 className="text-2xl font-bold mb-4">Definir Metas dos Pacientes</h1>
+      </div>
+
+      <div className="flex-grow overflow-y-auto pr-2">
+        <div className="space-y-4">
+            {patients.map(p => (
+                <div key={p.id}>
+                    <label htmlFor={`goal-${p.id}`} className="block mb-2">
+                        <span className="text-lg font-medium">{p.name}</span>
+                        <span className="block text-sm text-green-300">Quarto: {p.room} | Leito: {p.bed}</span>
+                    </label>
+                    <input
+                        type="text"
+                        id={`goal-${p.id}`}
+                        value={goals[p.id] || ''}
+                        onChange={(e) => handleGoalChange(p.id, e.target.value)}
+                        className={commonInputClasses}
+                        placeholder="Definir meta (ex: Controlar dor)"
+                    />
+                </div>
+            ))}
+        </div>
+      </div>
+      
+      <div className="flex-shrink-0 pt-4">
+        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+            <button
+            type="submit"
+            className="w-full flex-grow bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded"
+            >
+            Salvar Metas
+            </button>
+            <button
+            type="button"
+            onClick={onCancel}
+            className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded"
+            >
+            Cancelar
+            </button>
+        </div>
+      </div>
+    </form>
+  );
+};
+
+const AnalysisModal = ({ patientName, analysis, isLoading, onClose }) => {
+    const chartRef = useRef(null);
+    const chartInstance = useRef(null);
+
+    useEffect(() => {
+        if (chartRef.current && analysis?.chartData) {
+            if (chartInstance.current) {
+                chartInstance.current.destroy();
+            }
+            const ctx = chartRef.current.getContext('2d');
+            if (ctx) {
+                chartInstance.current = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: analysis.chartData.labels,
+                        datasets: [
+                            {
+                                label: 'Frequência Cardíaca (bpm)',
+                                data: analysis.chartData.heartRate,
+                                borderColor: '#4ade80',
+                                backgroundColor: 'rgba(74, 222, 128, 0.2)',
+                                yAxisID: 'y',
+                                tension: 0.1,
+                            },
+                            {
+                                label: 'Pressão Sistólica (mmHg)',
+                                data: analysis.chartData.systolic,
+                                borderColor: '#facc15',
+                                backgroundColor: 'rgba(250, 204, 21, 0.2)',
+                                yAxisID: 'y1',
+                                tension: 0.1,
+                            },
+                            {
+                                label: 'Pressão Diastólica (mmHg)',
+                                data: analysis.chartData.diastolic,
+                                borderColor: '#60a5fa',
+                                backgroundColor: 'rgba(96, 165, 250, 0.2)',
+                                yAxisID: 'y1',
+                                tension: 0.1,
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { ticks: { color: '#86efac' } },
+                            y: { type: 'linear', display: true, position: 'left', ticks: { color: '#4ade80' }, title: { display: true, text: 'BPM', color: '#4ade80' } },
+                            y1: { type: 'linear', display: true, position: 'right', ticks: { color: '#facc15' }, title: { display: true, text: 'mmHg', color: '#facc15' }, grid: { drawOnChartArea: false } }
+                        },
+                        plugins: { legend: { labels: { color: '#d1d5db' } } }
+                    }
+                });
+            }
+        }
+
+        return () => {
+            if (chartInstance.current) {
+                chartInstance.current.destroy();
+            }
+        };
+    }, [analysis]);
+
+  return (
+    <div className="flex flex-col h-full">
+        <h1 className="flex-shrink-0 text-2xl font-bold mb-4">Análise de Evolução: {patientName}</h1>
+        <div className="flex-grow overflow-y-auto pr-2">
+            {isLoading && (
+                <div className="text-center p-8">
+                    <p className="text-xl">Analisando dados com I.A...</p>
+                    <p>Isso pode levar alguns instantes.</p>
+                </div>
+            )}
+            {!isLoading && analysis && (
+                <div className="space-y-6">
+                    <div>
+                        <h2 className="text-xl font-semibold mb-2 text-yellow-300">Gráfico de Sinais Vitais</h2>
+                        <div className="relative h-64 sm:h-96 bg-gray-900/50 p-2 rounded border border-green-800">
+                            <canvas ref={chartRef}></canvas>
+                        </div>
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-semibold mb-2 text-yellow-300">Resumo da I.A.</h2>
+                        <p className="bg-gray-900/50 p-3 rounded border border-green-800 whitespace-pre-wrap">{analysis.summary}</p>
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-semibold mb-2 text-yellow-300">Aconselhamento da I.A.</h2>
+                        <p className="bg-gray-900/50 p-3 rounded border border-green-800 whitespace-pre-wrap">{analysis.advice}</p>
+                    </div>
+                    <p className="text-xs text-yellow-500 text-center pt-4">
+                        Aviso: A análise por I.A. é uma ferramenta de suporte e não substitui o julgamento clínico profissional.
+                    </p>
+                </div>
+            )}
+        </div>
+        <div className="flex-shrink-0 pt-4">
+            <button
+                onClick={onClose}
+                className="w-full bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded transition-colors duration-200"
+            >
+                Fechar Análise
+            </button>
+        </div>
+    </div>
+  );
+};
+
+const CameraView = ({ onAnalyze, onCancel, isLoading, title, subtitle, loadingMessage }) => {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const [capturedImage, setCapturedImage] = useState(null);
+  const [error, setError] = useState(null);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+
+  useEffect(() => {
+    const startCamera = async () => {
+      setIsCameraReady(false);
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('A API da câmera não é suportada neste navegador.');
+        }
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        streamRef.current = mediaStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+        setIsCameraReady(true);
+      } catch (err) {
+        console.error("Erro ao acessar a câmera: ", err);
+        setError('Não foi possível acessar a câmera. Verifique as permissões do navegador.');
+      }
+    };
+
+    const stopCamera = () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      setIsCameraReady(false);
+    };
+
+    if (!capturedImage) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+
+    return () => {
+      stopCamera();
+    };
+  }, [capturedImage]);
+
+  const handleTakePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        setCapturedImage(dataUrl);
+      }
+    }
+  };
+
+  const handleRetakePhoto = () => {
+    setCapturedImage(null);
+    setError(null);
+  };
+
+  const handleAnalyzeClick = () => {
+    if (capturedImage) {
+      onAnalyze(capturedImage);
+    }
+  };
+
+  if (isLoading) {
+      return (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+              <h2 className="text-2xl font-bold mb-4">Analisando Imagem...</h2>
+              <p>{loadingMessage}</p>
+              <p>Isso pode levar alguns instantes.</p>
+              <div className="mt-4 w-16 h-16 border-4 border-dashed rounded-full animate-spin border-green-500"></div>
+          </div>
+      );
+  }
+
+  return (
+    <div className="flex flex-col h-full items-center">
+      <div className="w-full text-center mb-4 flex-shrink-0">
+          <h1 className="text-2xl font-bold">{title}</h1>
+          <p className="text-sm">{subtitle}</p>
+      </div>
+      
+      <div className="w-full max-w-2xl border-2 border-green-700 p-2 mb-4 flex-grow relative flex items-center justify-center">
+        {capturedImage ? (
+          <img src={capturedImage} alt="Captura da câmera" className="max-w-full max-h-full object-contain" />
+        ) : (
+          <video ref={videoRef} autoPlay playsInline className="w-full h-full object-contain"></video>
+        )}
+        {!capturedImage && !error && (
+            <div className="absolute inset-0 border-4 border-dashed border-green-500/50 m-4 sm:m-8 rounded-lg flex items-center justify-center pointer-events-none">
+                <p className="text-green-500/80 bg-black/50 px-4 py-2 rounded">Enquadre o documento aqui</p>
+            </div>
+        )}
+         {error && <p className="absolute inset-0 flex items-center justify-center text-red-500 bg-black/80 p-4">{error}</p>}
+      </div>
+
+      <div className="flex-shrink-0 w-full max-w-2xl space-y-4">
+        {capturedImage ? (
+          <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+            <button onClick={handleAnalyzeClick} className="w-full flex-grow bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded">Analisar</button>
+            <button onClick={handleRetakePhoto} className="w-full sm:w-auto bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 px-4 border-b-4 border-yellow-800 hover:border-yellow-600 rounded">Tirar Outra Foto</button>
+          </div>
+        ) : (
+          <button onClick={handleTakePhoto} disabled={!isCameraReady || !!error} className="w-full bg-blue-600 hover:bg-blue-500 text-black font-bold py-3 px-4 border-b-4 border-blue-800 hover:border-blue-600 rounded disabled:bg-gray-600 disabled:border-gray-800 disabled:cursor-not-allowed">
+            Capturar Imagem
+          </button>
+        )}
+        <button onClick={onCancel} className="w-full bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded">
+          Cancelar
+        </button>
+        <canvas ref={canvasRef} className="hidden"></canvas>
+      </div>
+    </div>
+  );
+};
+
+const WhiteboardView = ({ onAnalyze, onCancel, isLoading }) => {
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const contextRef = useRef(null);
+  const [tool, setTool] = useState('pen');
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const setCanvasDimensions = () => {
+        const scale = window.devicePixelRatio;
+        canvas.width = canvas.offsetWidth * scale;
+        canvas.height = canvas.offsetHeight * scale;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+        context.scale(scale, scale);
+        context.lineCap = 'round';
+        contextRef.current = context;
+    }
+    
+    setCanvasDimensions();
+    window.addEventListener('resize', setCanvasDimensions);
+    return () => window.removeEventListener('resize', setCanvasDimensions);
+  }, []);
+
+  const getEventCoords = (event) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return {offsetX: 0, offsetY: 0};
+      const rect = canvas.getBoundingClientRect();
+
+      if ('touches' in event.nativeEvent) {
+          return {
+              offsetX: event.nativeEvent.touches[0].clientX - rect.left,
+              offsetY: event.nativeEvent.touches[0].clientY - rect.top
+          };
+      }
+      return {
+          offsetX: event.nativeEvent.clientX - rect.left,
+          offsetY: event.nativeEvent.clientY - rect.top
+      };
+  }
+
+  const startDrawing = (event) => {
+    event.preventDefault();
+    const context = contextRef.current;
+    if (!context) return;
+    
+    if (tool === 'pen') {
+        context.globalCompositeOperation = 'source-over';
+        context.strokeStyle = '#4ade80';
+        context.lineWidth = 0.2;
+    } else {
+        context.globalCompositeOperation = 'destination-out';
+        context.lineWidth = 20;
+    }
+
+    const { offsetX, offsetY } = getEventCoords(event);
+    context.beginPath();
+    context.moveTo(offsetX, offsetY);
+    setIsDrawing(true);
+  };
+
+  const finishDrawing = (event) => {
+    event.preventDefault();
+    const context = contextRef.current;
+    if (!context) return;
+    context.closePath();
+    setIsDrawing(false);
+  };
+
+  const draw = (event) => {
+    if (!isDrawing) return;
+    event.preventDefault();
+    const context = contextRef.current;
+    if (!context) return;
+    
+    const { offsetX, offsetY } = getEventCoords(event);
+    context.lineTo(offsetX, offsetY);
+    context.stroke();
+  };
+
+  const handleClear = () => {
+    const canvas = canvasRef.current;
+    const context = contextRef.current;
+    if (canvas && context) {
+      context.clearRect(0, 0, canvas.width / window.devicePixelRatio, canvas.height / window.devicePixelRatio);
+    }
+  };
+
+  const handleSaveAndAnalyze = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const imageForSavingBase64 = canvas.toDataURL('image/png');
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (tempCtx) {
+      tempCtx.fillStyle = 'white';
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      tempCtx.drawImage(canvas, 0, 0);
+    }
+    const imageForAnalysis = tempCanvas.toDataURL('image/png');
+    
+    try {
+        const imgurUrl = await uploadImage(imageForSavingBase64);
+        onAnalyze(imageForAnalysis, imgurUrl);
+    } catch (error) {
+        console.error("Failed to upload whiteboard drawing to Imgur", error);
+        alert("Não foi possível salvar o desenho. Tente novamente.");
+    }
+  };
+
+  if (isLoading) {
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-center">
+            <h2 className="text-2xl font-bold mb-4">Analisando Escrita...</h2>
+            <p>A I.A. está convertendo a escrita em dados.</p>
+            <p>Isso pode levar alguns instantes.</p>
+            <div className="mt-4 w-16 h-16 border-4 border-dashed rounded-full animate-spin border-green-500"></div>
+        </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full items-center">
+      <div className="w-full text-center mb-4 flex-shrink-0">
+          <h1 className="text-2xl font-bold">Lousa Digital</h1>
+          <p className="text-sm">Escreva a evolução do paciente. A I.A. preencherá os campos.</p>
+      </div>
+
+      <canvas
+        ref={canvasRef}
+        onMouseDown={startDrawing}
+        onMouseUp={finishDrawing}
+        onMouseLeave={finishDrawing}
+        onMouseMove={draw}
+        onTouchStart={startDrawing}
+        onTouchEnd={finishDrawing}
+        onTouchMove={draw}
+        className="w-full flex-grow border-2 border-green-700 bg-gray-900 cursor-crosshair"
+        style={{ touchAction: 'none' }}
+      />
+
+      <div className="flex-shrink-0 w-full pt-4 space-y-4">
+        <div className="flex justify-center items-center space-x-4">
+            <button 
+                type="button"
+                onClick={() => setTool('pen')} 
+                className={`flex items-center space-x-2 p-2 rounded transition-colors duration-200 ${tool === 'pen' ? 'bg-green-700 text-black' : 'border border-green-700 text-green-400 hover:bg-green-900/50'}`}
+                aria-pressed={tool === 'pen'}
+                title="Caneta"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" />
+                </svg>
+                <span>Caneta</span>
+            </button>
+            <button 
+                type="button"
+                onClick={() => setTool('eraser')}
+                className={`flex items-center space-x-2 p-2 rounded transition-colors duration-200 ${tool === 'eraser' ? 'bg-green-700 text-black' : 'border border-green-700 text-green-400 hover:bg-green-900/50'}`}
+                aria-pressed={tool === 'eraser'}
+                title="Borracha"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75L14.25 12m0 0l2.25 2.25M14.25 12l2.25-2.25M14.25 12L12 14.25m-2.58 4.92l-6.375-6.375a1.125 1.125 0 010-1.59L9.42 4.83c.211-.211.498-.33.796-.33H19.5a2.25 2.25 0 012.25 2.25v10.5a2.25 2.25 0 01-2.25 2.25h-9.284c-.298 0-.585-.119-.796-.33z" />
+                </svg>
+                <span>Borracha</span>
+            </button>
+        </div>
+        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+          <button onClick={handleSaveAndAnalyze} className="w-full flex-grow bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded">Analisar</button>
+          <button onClick={handleClear} className="w-full sm:w-auto bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 px-4 border-b-4 border-yellow-800 hover:border-yellow-600 rounded">Limpar</button>
+        </div>
+        <button onClick={onCancel} className="w-full bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-3 px-4 border-b-4 border-gray-900 hover:border-gray-700 rounded">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }) => {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="border-2 border-red-500 shadow-lg shadow-red-500/20 max-w-lg w-full mx-4 flex flex-col bg-black"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-red-700 text-black px-4 py-1 flex justify-between items-center flex-shrink-0">
+          <p className="font-bold">{title}</p>
+          <button onClick={onClose} className="font-bold text-lg leading-none p-1">&times;</button>
+        </div>
+        <div className="p-6 flex-grow min-h-0 flex flex-col">
+          <p className="text-lg mb-6 whitespace-pre-wrap">{message}</p>
+          <div className="flex justify-end space-x-4 mt-auto">
+            <button
+              onClick={onClose}
+              className="w-auto bg-gray-700 hover:bg-gray-600 text-green-300 font-bold py-2 px-6 border-b-4 border-gray-900 hover:border-gray-700 rounded transition-colors duration-200"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={onConfirm}
+              className="w-auto bg-red-700 hover:bg-red-600 text-black font-bold py-2 px-6 border-b-4 border-red-900 hover:border-red-700 rounded transition-colors duration-200"
+            >
+              Confirmar Exclusão
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// ===================================================================
+// COMPONENTE PRINCIPAL (App.tsx)
+// ===================================================================
+
+const App = () => {
+  const [patients, setPatients] = useState([]);
+  const [currentView, setCurrentView] = useState(View.PATIENT_LIST);
+  const [selectedPatientId, setSelectedPatientId] = useState(null);
+  const [evolutionToEditId, setEvolutionToEditId] = useState(null);
+  const [analysisData, setAnalysisData] = useState(null);
+  const [isAnalysisLoading, setIsAnalysisLoading] = useState(false);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [parsedEvolution, setParsedEvolution] = useState(null);
+  const [whiteboardDrawing, setWhiteboardDrawing] = useState(null);
+  const [patientToDeleteId, setPatientToDeleteId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchPatients = async () => {
+        setIsLoading(true);
+        try {
+            const patientsCollection = collection(db, 'axonevo');
+            const patientSnapshot = await getDocs(query(patientsCollection, orderBy('admissionDate', 'desc')));
+            const patientList = patientSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+            setPatients(patientList);
+        } catch (error) {
+            console.error("Error fetching patients from Firestore:", error);
+            alert("Não foi possível carregar os dados dos pacientes.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    fetchPatients();
+  }, []);
+
+  const handleSelectPatient = (id) => {
+    setSelectedPatientId(id);
+    setCurrentView(View.PATIENT_DETAIL);
+  };
+
+  const handleNavigateHome = () => {
+    setSelectedPatientId(null);
+    setCurrentView(View.PATIENT_LIST);
+  };
+
+  const handleAddPatient = async (patientData) => {
+    const newPatientData = {
+      ...patientData,
+      status: 'active',
+      evolutions: [],
+    };
+    try {
+        const docRef = await addDoc(collection(db, 'axonevo'), newPatientData);
+        const newPatient = { ...newPatientData, id: docRef.id };
+        setPatients(prev => [newPatient, ...prev]);
+        handleNavigateHome();
+    } catch (error) {
+        console.error("Error adding patient to Firestore:", error);
+        alert("Erro ao salvar novo paciente.");
+    }
+  };
+  
+  const handleUpdatePatient = async (patientData) => {
+    if (!selectedPatientId) return;
+    const patientRef = doc(db, 'axonevo', selectedPatientId);
+    const updatedData = { ...patientData, age: Number(patientData.age) };
+    try {
+        await updateDoc(patientRef, updatedData);
+        setPatients(patients.map(p =>
+          p.id === selectedPatientId
+            ? { ...p, ...updatedData }
+            : p
+        ));
+        setCurrentView(View.PATIENT_DETAIL);
+    } catch (error) {
+        console.error("Error updating patient:", error);
+        alert("Erro ao atualizar os dados do paciente.");
+    }
+  };
+  
+  const handleRequestDeletePatient = (patientId) => {
+    setPatientToDeleteId(patientId);
+  };
+
+  const handleConfirmDeletePatient = async () => {
+    if (!patientToDeleteId) return;
+    try {
+        await deleteDoc(doc(db, 'axonevo', patientToDeleteId));
+        setPatients(currentPatients => currentPatients.filter(p => p.id !== patientToDeleteId));
+        setPatientToDeleteId(null);
+        handleNavigateHome();
+    } catch (error) {
+        console.error("Error deleting patient:", error);
+        alert("Erro ao apagar o paciente.");
+    }
+  };
+
+  const handleCancelDeletePatient = () => {
+    setPatientToDeleteId(null);
+  };
+
+  const handleNavigateToEditPatient = (id) => {
+    setSelectedPatientId(id);
+    setCurrentView(View.EDIT_PATIENT_FORM);
+  };
+
+  const handleAddEvolution = async (evolution) => {
+    if (!selectedPatientId) return;
+
+    const patientToUpdate = patients.find(p => p.id === selectedPatientId);
+    if (!patientToUpdate) return;
+    
+    const finalPhotos = [...(evolution.photos || [])];
+    if (whiteboardDrawing) {
+      finalPhotos.unshift(whiteboardDrawing);
+    }
+
+    const newEvolution = {
+      ...evolution,
+      id: `e${Date.now()}`,
+      date: new Date().toISOString(),
+      photos: finalPhotos,
+    };
+    
+    const updatedEvolutions = [newEvolution, ...patientToUpdate.evolutions];
+
+    try {
+        const patientRef = doc(db, 'axonevo', selectedPatientId);
+        await updateDoc(patientRef, { evolutions: updatedEvolutions });
+        setPatients(
+          patients.map((p) =>
+            p.id === selectedPatientId
+              ? { ...p, evolutions: updatedEvolutions }
+              : p
+          )
+        );
+        setCurrentView(View.PATIENT_DETAIL);
+        setWhiteboardDrawing(null);
+    } catch (error) {
+        console.error("Error adding evolution:", error);
+        alert("Erro ao salvar a evolução.");
+    }
+  };
+
+  const handleNavigateToEditEvolution = (evolutionId) => {
+    setEvolutionToEditId(evolutionId);
+    setCurrentView(View.EDIT_EVOLUTION_FORM);
+  };
+
+  const handleUpdateEvolution = async (updatedEvolutionData) => {
+    if (!selectedPatientId || !evolutionToEditId) return;
+    
+    const patientToUpdate = patients.find(p => p.id === selectedPatientId);
+    if (!patientToUpdate) return;
+
+    const updatedEvolutions = patientToUpdate.evolutions.map(evo => {
+        return evo.id === evolutionToEditId ? { ...evo, ...updatedEvolutionData } : evo;
+    });
+
+    try {
+        const patientRef = doc(db, 'axonevo', selectedPatientId);
+        await updateDoc(patientRef, { evolutions: updatedEvolutions });
+        setPatients(patients.map(p => p.id === selectedPatientId ? { ...p, evolutions: updatedEvolutions } : p));
+        setCurrentView(View.PATIENT_DETAIL);
+        setEvolutionToEditId(null);
+    } catch (error) {
+        console.error("Error updating evolution:", error);
+        alert("Erro ao atualizar a evolução.");
+    }
+  };
+  
+  const handleDischargePatient = async () => {
+    if (!selectedPatientId) return;
+    try {
+        const patientRef = doc(db, 'axonevo', selectedPatientId);
+        await updateDoc(patientRef, { status: 'discharged' });
+        setPatients(
+          patients.map((p) =>
+            p.id === selectedPatientId ? { ...p, status: 'discharged' } : p
+          )
+        );
+        setCurrentView(View.PATIENT_DETAIL);
+    } catch (error) {
+        console.error("Error discharging patient:", error);
+        alert("Erro ao dar alta ao paciente.");
+    }
+  };
+
+  const handleArchivePatient = async () => {
+    if (!selectedPatientId) return;
+    try {
+        const patientRef = doc(db, 'axonevo', selectedPatientId);
+        await updateDoc(patientRef, { status: 'archived' });
+        setPatients(
+            patients.map((p) =>
+                p.id === selectedPatientId ? { ...p, status: 'archived' } : p
+            )
+        );
+        handleNavigateHome(); 
+    } catch (error) {
+        console.error("Error archiving patient:", error);
+        alert("Erro ao arquivar o paciente.");
+    }
+  };
+  
+  const handleUnarchivePatient = async () => {
+    if (!selectedPatientId) return;
+     try {
+        const patientRef = doc(db, 'axonevo', selectedPatientId);
+        await updateDoc(patientRef, { status: 'active' });
+        setPatients(
+            patients.map((p) =>
+                p.id === selectedPatientId ? { ...p, status: 'active' } : p
+            )
+        );
+    } catch (error) {
+        console.error("Error unarchiving patient:", error);
+        alert("Erro ao desarquivar o paciente.");
+    }
+  };
+
+  const handleUpdatePatientEvolutions = async (patientId, evolutions) => {
+    try {
+        const patientRef = doc(db, 'axonevo', patientId);
+        await updateDoc(patientRef, { evolutions });
+        setPatients(patients.map(p => p.id === patientId ? { ...p, evolutions } : p));
+    } catch (error) {
+        console.error("Error updating evolutions:", error);
+        alert("Erro ao atualizar as fotos da evolução.");
+    }
+  };
+
+  const handleSaveGoals = async (goals) => {
+    try {
+      const updatePromises = Object.keys(goals).map(patientId => {
+        const patientRef = doc(db, 'axonevo', patientId);
+        return updateDoc(patientRef, { goal: goals[patientId] });
+      });
+      await Promise.all(updatePromises);
+      setPatients(patients.map(p => ({
+          ...p,
+          goal: goals[p.id] !== undefined ? goals[p.id] : p.goal,
+      })));
+      setCurrentView(View.PATIENT_LIST);
+    } catch(error) {
+      console.error("Error saving goals:", error);
+      alert("Erro ao salvar as metas.");
+    }
+  };
+  
+  const handleGenerateAnalysis = async () => {
+    if (API_KEY === "SUA_CHAVE_API_AQUI") {
+      alert("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
+      return;
+    }
+    if (!selectedPatientId) return;
+    const patient = patients.find(p => p.id === selectedPatientId);
+    if (!patient || patient.evolutions.length === 0) {
+      alert("Dados insuficientes para análise.");
+      return;
+    }
+
+    setIsAnalysisLoading(true);
+    setCurrentView(View.ANALYSIS_MODAL);
+
+    const evolutionData = patient.evolutions.map(e => ({
+        date: e.date,
+        vitalSigns: e.vitalSigns,
+        notes: e.notes
+    })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    const prompt = `Analise os seguintes dados de evolução de um paciente e forneça um resumo e um aconselhamento.
+    Paciente: ${patient.name}, ${patient.age} anos.
+    Dados: ${JSON.stringify(evolutionData, null, 2)}
+    
+    Responda em português. Forneça um resumo conciso da evolução e um aconselhamento. Não inclua informações que não possam ser derivadas dos dados. Sua resposta deve ser um objeto JSON com duas chaves: "summary" e "advice".`;
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  summary: { type: Type.STRING, description: 'Resumo conciso da evolução do paciente em português.' },
+                  advice: { type: Type.STRING, description: 'Aconselhamento para o paciente ou equipe médica em português.' },
+                },
+                required: ['summary', 'advice'],
+              },
+            },
+        });
+
+        const result = JSON.parse(response.text);
+        
+        const labels = evolutionData.map(e => new Date(e.date).toLocaleDateString('pt-BR'));
+        const heartRate = evolutionData.map(e => parseInt(e.vitalSigns.heartRate) || null);
+        const bloodPressure = evolutionData.map(e => {
+            const parts = e.vitalSigns.bloodPressure.split('/');
+            return parts.length === 2 ? { systolic: parseInt(parts[0]), diastolic: parseInt(parts[1]) } : { systolic: null, diastolic: null };
+        });
+
+        setAnalysisData({
+            summary: result.summary,
+            advice: result.advice || "Não foi possível gerar aconselhamento.",
+            chartData: { labels, heartRate, systolic: bloodPressure.map(bp => bp.systolic), diastolic: bloodPressure.map(bp => bp.diastolic) }
+        });
+
+    } catch (error) {
+        console.error("Erro ao gerar análise por I.A.", error);
+        setAnalysisData({
+            summary: 'Erro ao gerar análise.',
+            advice: 'Não foi possível conectar ao serviço de I.A. Tente novamente mais tarde.',
+            chartData: { labels: [], heartRate: [], systolic: [], diastolic: [] }
+        });
+    } finally {
+        setIsAnalysisLoading(false);
+    }
+  };
+  
+  const handleAnalyzeAndAddPatients = async (imageDataUrl) => {
+    if (API_KEY === "SUA_CHAVE_API_AQUI") {
+      alert("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
+      return;
+    }
+    if (!imageDataUrl) return;
+    setIsAnalyzingImage(true);
+    setCurrentView(View.CAMERA_VIEW); 
+    const base64Data = imageDataUrl.split(',')[1];
+    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Data } };
+    const textPart = { text: `Analise a imagem desta lista de pacientes. Extraia o nome, idade, quarto e leito para cada paciente. Responda em português. Retorne os dados como um objeto JSON contendo uma única chave "patients" que é um array de objetos. Cada objeto deve ter as chaves: "name", "age", "room", e "bed". Se um valor não for encontrado, use um valor padrão apropriado (ex: 0 para idade, string vazia para os outros). Exemplo: {"patients": [{"name": "João Ninguém", "age": 50, "room": "101", "bed": "A"}]}` };
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [imagePart, textPart] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        patients: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    name: { type: Type.STRING },
+                                    age: { type: Type.NUMBER },
+                                    room: { type: Type.STRING },
+                                    bed: { type: Type.STRING },
+                                },
+                                required: ['name', 'age', 'room', 'bed']
+                            }
+                        }
+                    },
+                    required: ['patients']
+                }
+            }
+        });
+        
+        const result = JSON.parse(response.text);
+        const newPatientsFromAI = result.patients;
+        if (Array.isArray(newPatientsFromAI)) {
+            const creationPromises = newPatientsFromAI.map(p => {
+                const newPatientData = {
+                  name: p.name, age: p.age, room: p.room, bed: p.bed,
+                  admissionDate: new Date().toISOString().split('T')[0],
+                  status: 'active', evolutions: [],
+                };
+                return addDoc(collection(db, 'axonevo'), newPatientData);
+            });
+            await Promise.all(creationPromises);
+            const patientSnapshot = await getDocs(query(collection(db, 'axonevo'), orderBy('admissionDate', 'desc')));
+            const patientList = patientSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+            setPatients(patientList);
+            alert(`${newPatientsFromAI.length} pacientes foram adicionados com sucesso!`);
+        }
+        handleNavigateHome();
+    } catch (error) {
+        console.error("Erro ao analisar imagem e adicionar pacientes:", error);
+        alert("Não foi possível analisar a imagem. Verifique o formato e tente novamente.");
+        setCurrentView(View.PATIENT_LIST);
+    } finally {
+        setIsAnalyzingImage(false);
+    }
+  };
+  
+  const handleAnalyzeEvolutionImage = async (imageDataUrl) => {
+    if (API_KEY === "SUA_CHAVE_API_AQUI") {
+      alert("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
+      return;
+    }
+    if (!imageDataUrl) return;
+    setIsAnalyzingImage(true);
+    setCurrentView(View.EVOLUTION_CAMERA_VIEW);
+    const base64Data = imageDataUrl.split(',')[1];
+    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Data } };
+    const textPart = { text: `Analise a imagem desta anotação de evolução de paciente. Extraia os seguintes dados: Sinais Vitais (heartRate, bloodPressure, respiratoryRate, temperature, oxygenSaturation), Avaliação de Sistemas (cardiovascular, respiratory, digestive, neurological), Notas Adicionais (notes) e a Evolução Livre (freeText), que é o texto principal descritivo. Retorne como um objeto JSON. Se um valor não for encontrado, use uma string vazia "".` };
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [imagePart, textPart] },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT, properties: {
+              vitalSigns: { type: Type.OBJECT, properties: { heartRate: { type: Type.STRING }, bloodPressure: { type: Type.STRING }, respiratoryRate: { type: Type.STRING }, temperature: { type: Type.STRING }, oxygenSaturation: { type: Type.STRING } } },
+              assessment: { type: Type.OBJECT, properties: { cardiovascular: { type: Type.STRING }, respiratory: { type: Type.STRING }, digestive: { type: Type.STRING }, neurological: { type: Type.STRING } } },
+              notes: { type: Type.STRING }, freeText: { type: Type.STRING }
+            }
+          }
+        }
+      });
+      const result = JSON.parse(response.text);
+      setParsedEvolution(result);
+      alert("Formulário preenchido com os dados da imagem!");
+      setCurrentView(View.NEW_EVOLUTION_FORM);
+    } catch (error) {
+      console.error("Erro ao analisar imagem da evolução:", error);
+      alert("Não foi possível analisar a imagem da evolução. Tente novamente.");
+      setCurrentView(View.NEW_EVOLUTION_FORM);
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
+
+  const handleAnalyzeWhiteboard = async (imageForAnalysis, savedImageUrl) => {
+    if (API_KEY === "SUA_CHAVE_API_AQUI") {
+      alert("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
+      return;
+    }
+    if (!imageForAnalysis || !savedImageUrl) return;
+    setIsAnalyzingImage(true);
+    setWhiteboardDrawing(savedImageUrl);
+    setCurrentView(View.WHITEBOARD_VIEW);
+    const base64Data = imageForAnalysis.split(',')[1];
+    const imagePart = { inlineData: { mimeType: 'image/png', data: base64Data } };
+    const textPart = { text: `Analise a imagem desta anotação de evolução de paciente escrita a mão. Extraia os seguintes dados: Sinais Vitais (heartRate, bloodPressure, respiratoryRate, temperature, oxygenSaturation), Avaliação de Sistemas (cardiovascular, respiratory, digestive, neurological), Notas Adicionais (notes) e a Evolução Livre (freeText), que é o texto principal descritivo. Retorne como um objeto JSON. Se um valor não for encontrado, use uma string vazia "".` };
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [imagePart, textPart] },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT, properties: {
+              vitalSigns: { type: Type.OBJECT, properties: { heartRate: { type: Type.STRING }, bloodPressure: { type: Type.STRING }, respiratoryRate: { type: Type.STRING }, temperature: { type: Type.STRING }, oxygenSaturation: { type: Type.STRING } } },
+              assessment: { type: Type.OBJECT, properties: { cardiovascular: { type: Type.STRING }, respiratory: { type: Type.STRING }, digestive: { type: Type.STRING }, neurological: { type: Type.STRING } } },
+              notes: { type: Type.STRING }, freeText: { type: Type.STRING }
+            }
+          }
+        }
+      });
+      const result = JSON.parse(response.text);
+      setParsedEvolution(result);
+      alert("Formulário preenchido com os dados da lousa!");
+      setCurrentView(View.NEW_EVOLUTION_FORM);
+    } catch (error) {
+      console.error("Erro ao analisar imagem da lousa:", error);
+      alert("Não foi possível analisar a escrita. Tente novamente.");
+      setCurrentView(View.NEW_EVOLUTION_FORM);
+      setWhiteboardDrawing(null);
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
+
+  const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
+  const patientToDelete = patients.find(p => p.id === patientToDeleteId);
+  
+  const renderLoading = () => (
+    <TerminalWindow title="C:\> INITIALIZING SYSTEM...">
+        <div className="flex flex-col items-center justify-center h-full text-center">
+            <h2 className="text-2xl font-bold mb-4">Carregando Dados...</h2>
+            <p>Conectando ao banco de dados de pacientes.</p>
+            <div className="mt-4 w-16 h-16 border-4 border-dashed rounded-full animate-spin border-green-500"></div>
+        </div>
+    </TerminalWindow>
+  );
+
+  const renderContent = () => {
+    if (isLoading) {
+        return renderLoading();
+    }
+    switch (currentView) {
+      case View.PATIENT_LIST:
+        return (
+          <TerminalWindow title="C:\Users\Medico> dir pacientes">
+            <PatientList
+              patients={patients.filter(p => p.status !== 'archived')}
+              onSelectPatient={handleSelectPatient}
+              onNewPatient={() => setCurrentView(View.NEW_PATIENT_FORM)}
+              onManageGoals={() => setCurrentView(View.GOALS_FORM)}
+              onShowArchived={() => setCurrentView(View.ARCHIVED_LIST)}
+              onOpenCamera={() => setCurrentView(View.CAMERA_VIEW)}
+            />
+          </TerminalWindow>
+        );
+      case View.ARCHIVED_LIST:
+        return (
+            <TerminalWindow title="C:\Users\Medico> dir pacientes /a">
+                <PatientList
+                    patients={patients.filter(p => p.status === 'archived')}
+                    onSelectPatient={handleSelectPatient}
+                    onBackToActive={handleNavigateHome}
+                    isArchivedView={true}
+                />
+            </TerminalWindow>
+        );
+      case View.PATIENT_DETAIL:
+        return selectedPatient ? (
+          <TerminalWindow title={`C:\\Pacientes\\${selectedPatient.name.replace(/\s/g, '_')}> type evolucao.txt`}>
+            <PatientDetail
+              patient={selectedPatient}
+              onBack={handleNavigateHome}
+              onNewEvolution={() => setCurrentView(View.NEW_EVOLUTION_FORM)}
+              onDischarge={handleDischargePatient}
+              onArchive={handleArchivePatient}
+              onUnarchive={handleUnarchivePatient}
+              onUpdateEvolutions={handleUpdatePatientEvolutions}
+              onAnalyze={handleGenerateAnalysis}
+              onEdit={handleNavigateToEditPatient}
+              onDelete={handleRequestDeletePatient}
+              onEditEvolution={handleNavigateToEditEvolution}
+            />
+          </TerminalWindow>
+        ) : null;
+      case View.NEW_PATIENT_FORM:
+        return (
+          <TerminalWindow title="C:\Users\Medico> create paciente">
+            <PatientForm
+              onSubmit={handleAddPatient}
+              onCancel={handleNavigateHome}
+            />
+          </TerminalWindow>
+        );
+        case View.EDIT_PATIENT_FORM:
+            return selectedPatient ? (
+              <TerminalWindow title={`C:\\Pacientes\\${selectedPatient.name.replace(/\s/g, '_')}> edit`}>
+                <PatientForm
+                  onSubmit={handleUpdatePatient}
+                  onCancel={() => setCurrentView(View.PATIENT_DETAIL)}
+                  patientToEdit={selectedPatient}
+                />
+              </TerminalWindow>
+            ) : null;
+      case View.NEW_EVOLUTION_FORM:
+        return selectedPatient ? (
+          <TerminalWindow title={`C:\\Pacientes\\${selectedPatient.name.replace(/\s/g, '_')}> new evolucao`}>
+            <EvolutionForm
+              patientName={selectedPatient.name}
+              onSubmit={handleAddEvolution}
+              onCancel={() => {
+                setCurrentView(View.PATIENT_DETAIL);
+                setWhiteboardDrawing(null);
+              }}
+              onOpenCamera={() => setCurrentView(View.EVOLUTION_CAMERA_VIEW)}
+              onOpenWhiteboard={() => setCurrentView(View.WHITEBOARD_VIEW)}
+              initialData={parsedEvolution}
+              onDataParsed={() => setParsedEvolution(null)}
+            />
+          </TerminalWindow>
+        ) : null;
+       case View.EDIT_EVOLUTION_FORM:
+        const evolutionToEdit = selectedPatient?.evolutions.find(e => e.id === evolutionToEditId);
+        return selectedPatient && evolutionToEdit ? (
+            <TerminalWindow title={`C:\\Pacientes\\${selectedPatient.name.replace(/\s/g, '_')}> edit evolucao`}>
+                <EvolutionForm
+                    patientName={selectedPatient.name}
+                    onSubmit={handleUpdateEvolution}
+                    onCancel={() => {
+                        setCurrentView(View.PATIENT_DETAIL);
+                        setEvolutionToEditId(null);
+                    }}
+                    evolutionToEdit={evolutionToEdit}
+                />
+            </TerminalWindow>
+        ) : null;
+      case View.GOALS_FORM:
+        return (
+            <TerminalWindow title="C:\Users\Medico> edit metas.ini">
+                <GoalsForm
+                    patients={patients.filter(p => p.status === 'active')}
+                    onSave={handleSaveGoals}
+                    onCancel={handleNavigateHome}
+                />
+            </TerminalWindow>
+        );
+      case View.ANALYSIS_MODAL:
+        return (
+          <>
+            {selectedPatient && (
+              <TerminalWindow title={`C:\\Pacientes\\${selectedPatient.name.replace(/\s/g, '_')}> analysis.exe`}>
+                <AnalysisModal
+                  patientName={selectedPatient.name}
+                  analysis={analysisData}
+                  isLoading={isAnalysisLoading}
+                  onClose={() => setCurrentView(View.PATIENT_DETAIL)}
+                />
+              </TerminalWindow>
+            )}
+          </>
+        );
+      case View.CAMERA_VIEW:
+        return (
+            <TerminalWindow title="C:\Users\Medico> scan_pacientes.exe">
+                <CameraView
+                    onAnalyze={handleAnalyzeAndAddPatients}
+                    onCancel={handleNavigateHome}
+                    isLoading={isAnalyzingImage}
+                    title="Cadastro por Câmera"
+                    subtitle="Fotografe uma lista ou tabela para adicionar pacientes automaticamente."
+                    loadingMessage="Processando a lista de pacientes."
+                />
+            </TerminalWindow>
+        );
+      case View.EVOLUTION_CAMERA_VIEW:
+        return (
+            <TerminalWindow title="C:\Users\Medico> scan_evolucao.exe">
+                <CameraView
+                    onAnalyze={handleAnalyzeEvolutionImage}
+                    onCancel={() => setCurrentView(View.NEW_EVOLUTION_FORM)}
+                    isLoading={isAnalyzingImage}
+                    title="Digitalizar Evolução"
+                    subtitle="Fotografe uma evolução manuscrita ou impressa para preencher o formulário."
+                    loadingMessage="Analisando a evolução..."
+                />
+            </TerminalWindow>
+        );
+      case View.WHITEBOARD_VIEW:
+        return (
+            <TerminalWindow title="C:\Users\Medico> evolution_whiteboard.exe">
+                <WhiteboardView
+                    onAnalyze={handleAnalyzeWhiteboard}
+                    onCancel={() => setCurrentView(View.NEW_EVOLUTION_FORM)}
+                    isLoading={isAnalyzingImage}
+                />
+            </TerminalWindow>
+        );
+      default:
+        return <p>Carregando...</p>;
+    }
+  };
+
+  return (
+    <div className="bg-black text-green-400 h-screen p-2 sm:p-4">
+      {renderContent()}
+      <ConfirmationModal
+        isOpen={!!patientToDeleteId}
+        onClose={handleCancelDeletePatient}
+        onConfirm={handleConfirmDeletePatient}
+        title="C:\> TERMINATE PROCESS"
+        message={`Tem certeza que deseja apagar permanentemente o paciente "${patientToDelete?.name}"?\n\nEsta ação não pode ser desfeita.`}
+      />
+    </div>
+  );
+};
+
+
+// ===================================================================
+// INICIALIZAÇÃO DO APP
+// ===================================================================
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+    </script>
+  </body>
+</html>
