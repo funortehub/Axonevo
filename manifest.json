@@ -1,21 +1,19 @@
+
 {
-  "name": "Evolução de Pacientes - Terminal Med",
-  "short_name": "Terminal Med",
-  "description": "Uma aplicação para registrar a evolução diária de pacientes hospitalares, com uma estética de terminal de computador.",
+  "name": "Axonevo - Prontuário Médico",
+  "short_name": "Axonevo",
+  "description": "Um prontuário médico eletrônico moderno com análise de IA.",
   "start_url": ".",
-  "display": "fullscreen",
+  "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
+  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/assets/icon.svg",
-      "sizes": "192x192",
-      "type": "image/svg+xml"
-    },
-    {
-      "src": "/assets/icon.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml"
+      "src": "data:image/svg+xml,%3Csvg viewBox='0 0 256 256' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='256' height='256' fill='black'/%3E%3Cpath d='M32 128H80L90 108L100 148L115 68L130 188L176 128' stroke='%234ade80' stroke-width='16' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='184' y='104' width='16' height='48' fill='%234ade80' rx='4'/%3E%3C/svg%3E",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }
