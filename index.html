@@ -50,7 +50,7 @@
     <script type="module">
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import { GoogleGenerativeAI as GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import Chart from 'chart.js/auto';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, doc, addDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
@@ -535,19 +535,7 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const API_KEY = "AIzaSyCz8u5Czz0OhCjSHh_e22qPMz02ahrGAss";
-  const genAI = new GoogleGenAI(API_KEY);
-  const generationConfig = {
-    temperature: 0.2,
-    topK: 1,
-    topP: 1,
-    maxOutputTokens: 2048,
-  };
-  const safetySettings = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-  ];
+  const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -671,10 +659,15 @@ const App = () => {
     const prompt = `Analise os seguintes dados de evolução de um paciente: ${JSON.stringify(evolutionData)}. Retorne um objeto JSON com duas chaves: "summary" (um resumo conciso da evolução em português) e "advice" (um aconselhamento baseado nos dados em português).`;
     
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro-latest", generationConfig, safetySettings });
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text().replace(/```json/g, '').replace(/```/g, '');
+        const response = await genAI.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+             config: {
+                responseMimeType: "application/json",
+            },
+        });
+
+        const text = response.text.replace(/```json/g, '').replace(/```/g, '');
         const analysis = JSON.parse(text);
         
         const labels = evolutionData.map(e => new Date(e.date).toLocaleDateString('pt-BR'));
@@ -693,10 +686,20 @@ const App = () => {
     const prompt = `Analise a imagem da lista. Extraia nome, idade, quarto e leito para cada paciente. Retorne um objeto JSON com uma chave "patients" que é um array de objetos. Cada objeto deve ter as chaves: "name", "age", "room", e "bed".`;
     
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro-vision-latest", generationConfig, safetySettings });
-        const result = await model.generateContent([prompt, { inlineData: { mimeType: 'image/jpeg', data: base64Data } }]);
-        const response = await result.response;
-        const text = response.text().replace(/```json/g, '').replace(/```/g, '');
+        const parts = [
+          { text: prompt },
+          { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+        ];
+
+        const response = await genAI.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: { parts: parts },
+            config: {
+                responseMimeType: "application/json",
+            },
+        });
+        
+        const text = response.text.replace(/```json/g, '').replace(/```/g, '');
         const analysis = JSON.parse(text);
 
         if (Array.isArray(analysis.patients)) {
@@ -725,10 +728,20 @@ const App = () => {
     const prompt = `Analise a imagem desta anotação de evolução. Extraia: Sinais Vitais (heartRate, bloodPressure, respiratoryRate, temperature, oxygenSaturation), Avaliação de Sistemas (cardiovascular, respiratory, digestive, neurological), Notas (notes) e Evolução Livre (freeText). Retorne como um objeto JSON. Use "" para valores não encontrados.`;
     
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro-vision-latest", generationConfig, safetySettings });
-      const result = await model.generateContent([prompt, { inlineData: { mimeType: fromWhiteboard ? 'image/png' : 'image/jpeg', data: base64Data } }]);
-      const response = await result.response;
-      const text = response.text().replace(/```json/g, '').replace(/```/g, '');
+      const parts = [
+          { text: prompt },
+          { inlineData: { mimeType: fromWhiteboard ? 'image/png' : 'image/jpeg', data: base64Data } }
+      ];
+
+      const response = await genAI.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: { parts: parts },
+          config: {
+                responseMimeType: "application/json",
+          },
+      });
+
+      const text = response.text.replace(/```json/g, '').replace(/```/g, '');
       const analysis = JSON.parse(text);
       setParsedEvolution(analysis);
       alert("Formulário preenchido com os dados da imagem!");
