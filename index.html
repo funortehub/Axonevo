@@ -90,6 +90,7 @@ var View;
     View[View["EVOLUTION_CAMERA_VIEW"] = 9] = "EVOLUTION_CAMERA_VIEW";
     View[View["WHITEBOARD_VIEW"] = 10] = "WHITEBOARD_VIEW";
     View[View["EDIT_EVOLUTION_FORM"] = 11] = "EDIT_EVOLUTION_FORM";
+    View[View["EVOLUTION_PHOTO_CAMERA_VIEW"] = 12] = "EVOLUTION_PHOTO_CAMERA_VIEW";
 })(View || (View = {}));
 
 
@@ -611,8 +612,11 @@ const EvolutionForm = ({
     patientName, 
     onSubmit, 
     onCancel, 
-    onOpenCamera, 
-    onOpenWhiteboard, 
+    onOpenAiCamera, 
+    onOpenWhiteboard,
+    onTakePhoto,
+    newPhotoUrl,
+    onPhotoAdded,
     initialData, 
     onDataParsed,
     evolutionToEdit,
@@ -640,6 +644,13 @@ const EvolutionForm = ({
         setPhotos(evolutionToEdit.photos || []);
     }
   }, [evolutionToEdit]);
+  
+  useEffect(() => {
+    if (newPhotoUrl) {
+      setPhotos(prev => [...prev, newPhotoUrl]);
+      onPhotoAdded();
+    }
+  }, [newPhotoUrl, onPhotoAdded]);
 
   useEffect(() => {
     if (initialData && onDataParsed) {
@@ -704,7 +715,7 @@ const EvolutionForm = ({
     <form onSubmit={handleSubmit} className="flex flex-col h-full">
       <div className="flex-shrink-0 flex justify-between items-center">
         <h1 className="text-2xl font-bold mb-4">{isEditMode ? 'Editar Evolução' : 'Nova Evolução'}: {patientName}</h1>
-        {!isEditMode && onOpenCamera && onOpenWhiteboard && (
+        {!isEditMode && onOpenAiCamera && onOpenWhiteboard && (
             <div className="flex items-center space-x-2">
                 <button
                     type="button"
@@ -719,7 +730,7 @@ const EvolutionForm = ({
                 </button>
                 <button
                     type="button"
-                    onClick={onOpenCamera}
+                    onClick={onOpenAiCamera}
                     className="p-2 mb-4 text-green-400 hover:bg-green-900/50 rounded-lg transition-colors duration-200"
                     title="Digitalizar Evolução com Câmera"
                     aria-label="Digitalizar Evolução com Câmera I.A."
@@ -766,7 +777,23 @@ const EvolutionForm = ({
 
             <fieldset className={fieldsetClasses}>
                 <legend className={legendClasses}>Fotos</legend>
-                <input type="file" multiple accept="image/*" onChange={handlePhotoChange} disabled={isUploading} className={`${commonInputClasses} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-700 file:text-black hover:file:bg-green-600 disabled:opacity-50`}/>
+                <div className="flex items-center space-x-2">
+                    <input type="file" multiple accept="image/*" onChange={handlePhotoChange} disabled={isUploading} className={`${commonInputClasses} w-full file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-700 file:text-black hover:file:bg-green-600 disabled:opacity-50`}/>
+                    {onTakePhoto && (
+                         <button
+                            type="button"
+                            onClick={onTakePhoto}
+                            className="p-2 text-green-400 hover:bg-green-900/50 rounded-lg transition-colors duration-200 shrink-0"
+                            title="Tirar Foto com a Câmera"
+                            aria-label="Tirar Foto com a Câmera"
+                         >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                         </button>
+                    )}
+                </div>
                 {isUploading && <p className="text-yellow-400">Enviando imagens...</p>}
                 {photos.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
@@ -980,7 +1007,7 @@ const AnalysisModal = ({ patientName, analysis, isLoading, onClose }) => {
   );
 };
 
-const CameraView = ({ onAnalyze, onCancel, isLoading, title, subtitle, loadingMessage }) => {
+const CameraView = ({ onConfirm, onCancel, isProcessing, title, subtitle, processingMessage, confirmButtonText = 'Confirmar' }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -1046,17 +1073,17 @@ const CameraView = ({ onAnalyze, onCancel, isLoading, title, subtitle, loadingMe
     setError(null);
   };
 
-  const handleAnalyzeClick = () => {
+  const handleConfirmClick = () => {
     if (capturedImage) {
-      onAnalyze(capturedImage);
+      onConfirm(capturedImage);
     }
   };
 
-  if (isLoading) {
+  if (isProcessing) {
       return (
           <div className="flex flex-col items-center justify-center h-full text-center">
-              <h2 className="text-2xl font-bold mb-4">Analisando Imagem...</h2>
-              <p>{loadingMessage}</p>
+              <h2 className="text-2xl font-bold mb-4">Processando...</h2>
+              <p>{processingMessage}</p>
               <p>Isso pode levar alguns instantes.</p>
               <div className="mt-4 w-16 h-16 border-4 border-dashed rounded-full animate-spin border-green-500"></div>
           </div>
@@ -1087,7 +1114,7 @@ const CameraView = ({ onAnalyze, onCancel, isLoading, title, subtitle, loadingMe
       <div className="flex-shrink-0 w-full max-w-2xl space-y-4">
         {capturedImage ? (
           <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
-            <button onClick={handleAnalyzeClick} className="w-full flex-grow bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded">Analisar</button>
+            <button onClick={handleConfirmClick} className="w-full flex-grow bg-green-700 hover:bg-green-600 text-black font-bold py-3 px-4 border-b-4 border-green-900 hover:border-green-700 rounded">{confirmButtonText}</button>
             <button onClick={handleRetakePhoto} className="w-full sm:w-auto bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 px-4 border-b-4 border-yellow-800 hover:border-yellow-600 rounded">Tirar Outra Foto</button>
           </div>
         ) : (
@@ -1375,12 +1402,14 @@ const App = () => {
   const [evolutionToEditId, setEvolutionToEditId] = useState(null);
   const [analysisData, setAnalysisData] = useState(null);
   const [isAnalysisLoading, setIsAnalysisLoading] = useState(false);
-  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
   const [parsedEvolution, setParsedEvolution] = useState(null);
   const [whiteboardDrawing, setWhiteboardDrawing] = useState(null);
   const [patientToDeleteId, setPatientToDeleteId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [alertMessage, setAlertMessage] = useState('');
+  const [newlyCapturedPhotoUrl, setNewlyCapturedPhotoUrl] = useState(null);
+  const [formReturnView, setFormReturnView] = useState(null);
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -1693,7 +1722,7 @@ const App = () => {
       return;
     }
     if (!imageDataUrl) return;
-    setIsAnalyzingImage(true);
+    setIsProcessingPhoto(true);
     setCurrentView(View.CAMERA_VIEW); 
     const base64Data = imageDataUrl.split(',')[1];
     const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Data } };
@@ -1751,7 +1780,7 @@ const App = () => {
         setAlertMessage("Não foi possível analisar a imagem. Verifique o formato e tente novamente.");
         setCurrentView(View.PATIENT_LIST);
     } finally {
-        setIsAnalyzingImage(false);
+        setIsProcessingPhoto(false);
     }
   };
   
@@ -1761,7 +1790,7 @@ const App = () => {
       return;
     }
     if (!imageDataUrl) return;
-    setIsAnalyzingImage(true);
+    setIsProcessingPhoto(true);
     setCurrentView(View.EVOLUTION_CAMERA_VIEW);
     const base64Data = imageDataUrl.split(',')[1];
     const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Data } };
@@ -1792,7 +1821,7 @@ const App = () => {
       setAlertMessage("Não foi possível analisar a imagem da evolução. Tente novamente.");
       setCurrentView(View.NEW_EVOLUTION_FORM);
     } finally {
-      setIsAnalyzingImage(false);
+      setIsProcessingPhoto(false);
     }
   };
 
@@ -1802,7 +1831,7 @@ const App = () => {
       return;
     }
     if (!imageForAnalysis || !savedImageUrl) return;
-    setIsAnalyzingImage(true);
+    setIsProcessingPhoto(true);
     setWhiteboardDrawing(savedImageUrl);
     setCurrentView(View.WHITEBOARD_VIEW);
     const base64Data = imageForAnalysis.split(',')[1];
@@ -1835,9 +1864,25 @@ const App = () => {
       setCurrentView(View.NEW_EVOLUTION_FORM);
       setWhiteboardDrawing(null);
     } finally {
-      setIsAnalyzingImage(false);
+      setIsProcessingPhoto(false);
     }
   };
+  
+   const handleCaptureAndUploadEvolutionPhoto = async (imageDataUrl) => {
+      if (!imageDataUrl) return;
+      setIsProcessingPhoto(true);
+      try {
+        const imgurUrl = await uploadImage(imageDataUrl);
+        setNewlyCapturedPhotoUrl(imgurUrl);
+      } catch (error) {
+        console.error("Error uploading captured photo:", error);
+        setAlertMessage("Falha no upload da foto capturada.");
+      } finally {
+        setIsProcessingPhoto(false);
+        setCurrentView(formReturnView); 
+        setFormReturnView(null);
+      }
+    };
 
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
   const patientToDelete = patients.find(p => p.id === patientToDeleteId);
@@ -1928,8 +1973,14 @@ const App = () => {
                 setCurrentView(View.PATIENT_DETAIL);
                 setWhiteboardDrawing(null);
               }}
-              onOpenCamera={() => setCurrentView(View.EVOLUTION_CAMERA_VIEW)}
+              onOpenAiCamera={() => setCurrentView(View.EVOLUTION_CAMERA_VIEW)}
               onOpenWhiteboard={() => setCurrentView(View.WHITEBOARD_VIEW)}
+              onTakePhoto={() => {
+                setFormReturnView(View.NEW_EVOLUTION_FORM);
+                setCurrentView(View.EVOLUTION_PHOTO_CAMERA_VIEW);
+              }}
+              newPhotoUrl={newlyCapturedPhotoUrl}
+              onPhotoAdded={() => setNewlyCapturedPhotoUrl(null)}
               initialData={parsedEvolution}
               onDataParsed={() => setParsedEvolution(null)}
               onShowAlert={setAlertMessage}
@@ -1947,6 +1998,12 @@ const App = () => {
                         setCurrentView(View.PATIENT_DETAIL);
                         setEvolutionToEditId(null);
                     }}
+                    onTakePhoto={() => {
+                        setFormReturnView(View.EDIT_EVOLUTION_FORM);
+                        setCurrentView(View.EVOLUTION_PHOTO_CAMERA_VIEW);
+                    }}
+                    newPhotoUrl={newlyCapturedPhotoUrl}
+                    onPhotoAdded={() => setNewlyCapturedPhotoUrl(null)}
                     evolutionToEdit={evolutionToEdit}
                     onShowAlert={setAlertMessage}
                 />
@@ -1981,12 +2038,13 @@ const App = () => {
         return (
             <TerminalWindow title="C:\Users\Medico> scan_pacientes.exe">
                 <CameraView
-                    onAnalyze={handleAnalyzeAndAddPatients}
+                    onConfirm={handleAnalyzeAndAddPatients}
                     onCancel={handleNavigateHome}
-                    isLoading={isAnalyzingImage}
+                    isProcessing={isProcessingPhoto}
                     title="Cadastro por Câmera"
                     subtitle="Fotografe uma lista ou tabela para adicionar pacientes automaticamente."
-                    loadingMessage="Processando a lista de pacientes."
+                    processingMessage="Processando a lista de pacientes."
+                    confirmButtonText="Analisar"
                 />
             </TerminalWindow>
         );
@@ -1994,12 +2052,30 @@ const App = () => {
         return (
             <TerminalWindow title="C:\Users\Medico> scan_evolucao.exe">
                 <CameraView
-                    onAnalyze={handleAnalyzeEvolutionImage}
+                    onConfirm={handleAnalyzeEvolutionImage}
                     onCancel={() => setCurrentView(View.NEW_EVOLUTION_FORM)}
-                    isLoading={isAnalyzingImage}
+                    isProcessing={isProcessingPhoto}
                     title="Digitalizar Evolução"
                     subtitle="Fotografe uma evolução manuscrita ou impressa para preencher o formulário."
-                    loadingMessage="Analisando a evolução..."
+                    processingMessage="Analisando a evolução..."
+                    confirmButtonText="Analisar"
+                />
+            </TerminalWindow>
+        );
+      case View.EVOLUTION_PHOTO_CAMERA_VIEW:
+        return (
+            <TerminalWindow title="C:\Users\Medico> camera.exe">
+                <CameraView
+                    onConfirm={handleCaptureAndUploadEvolutionPhoto}
+                    onCancel={() => {
+                        setCurrentView(formReturnView || View.PATIENT_DETAIL);
+                        setFormReturnView(null);
+                    }}
+                    isProcessing={isProcessingPhoto}
+                    title="Tirar Foto para Evolução"
+                    subtitle="Enquadre o que deseja fotografar e capture a imagem."
+                    processingMessage="Enviando foto..."
+                    confirmButtonText="Usar Foto"
                 />
             </TerminalWindow>
         );
@@ -2009,7 +2085,7 @@ const App = () => {
                 <WhiteboardView
                     onAnalyze={handleAnalyzeWhiteboard}
                     onCancel={() => setCurrentView(View.NEW_EVOLUTION_FORM)}
-                    isLoading={isAnalyzingImage}
+                    isLoading={isProcessingPhoto}
                     onShowAlert={setAlertMessage}
                 />
             </TerminalWindow>
