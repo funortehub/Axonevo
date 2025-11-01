@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
@@ -13,9 +12,9 @@
     <!-- iOS PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg viewBox='0 0 256 256' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='256' height='256' fill='black'/%3E%3Cpath d='M32 128H80L90 108L100 148L115 68L130 188L176 128' stroke='%234ade80' stroke-width='16' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='184' y='104' width='16' height='48' fill='%234ade80' rx='4'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="icon.svg">
     
-    <link rel="icon" href="data:image/svg+xml,%3Csvg width='256' height='256' viewBox='0 0 256 256' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='256' height='256' fill='black'/%3E%3Cpath d='M32 128H80L90 108L100 148L115 68L130 188L176 128' stroke='%234ade80' stroke-width='16' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='184' y='104' width='16' height='48' fill='%234ade80' rx='4'/%3E%3C/svg%3E" type="image/svg+xml">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -616,7 +615,8 @@ const EvolutionForm = ({
     onOpenWhiteboard, 
     initialData, 
     onDataParsed,
-    evolutionToEdit 
+    evolutionToEdit,
+    onShowAlert,
 }) => {
   const [vitalSigns, setVitalSigns] = useState({
     heartRate: '', bloodPressure: '', respiratoryRate: '', temperature: '', oxygenSaturation: '',
@@ -677,7 +677,7 @@ const EvolutionForm = ({
             setPhotos(prev => [...prev, ...imgurUrls]);
         } catch (error) {
             console.error("Error uploading photos:", error);
-            alert("Falha no upload de uma ou mais imagens.");
+            onShowAlert("Falha no upload de uma ou mais imagens.");
         } finally {
             setIsUploading(false);
             e.target.value = '';
@@ -1104,7 +1104,7 @@ const CameraView = ({ onAnalyze, onCancel, isLoading, title, subtitle, loadingMe
   );
 };
 
-const WhiteboardView = ({ onAnalyze, onCancel, isLoading }) => {
+const WhiteboardView = ({ onAnalyze, onCancel, isLoading, onShowAlert }) => {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const contextRef = useRef(null);
@@ -1215,7 +1215,7 @@ const WhiteboardView = ({ onAnalyze, onCancel, isLoading }) => {
         onAnalyze(imageForAnalysis, imgurUrl);
     } catch (error) {
         console.error("Failed to upload whiteboard drawing to Imgur", error);
-        alert("Não foi possível salvar o desenho. Tente novamente.");
+        onShowAlert("Não foi possível salvar o desenho. Tente novamente.");
     }
   };
 
@@ -1223,7 +1223,7 @@ const WhiteboardView = ({ onAnalyze, onCancel, isLoading }) => {
     return (
         <div className="flex flex-col items-center justify-center h-full text-center">
             <h2 className="text-2xl font-bold mb-4">Analisando Escrita...</h2>
-            <p>A I.A. está convertendo a escrita em dados.</p>
+            <p>Processando suas anotações.</p>
             <p>Isso pode levar alguns instantes.</p>
             <div className="mt-4 w-16 h-16 border-4 border-dashed rounded-full animate-spin border-green-500"></div>
         </div>
@@ -1329,6 +1329,40 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }) => {
   );
 };
 
+const AlertModal = ({ isOpen, onClose, message, title = "C:\\> SYSTEM_MESSAGE" }) => {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="border-2 border-yellow-500 shadow-lg shadow-yellow-500/20 max-w-lg w-full mx-4 flex flex-col bg-black"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-yellow-700 text-black px-4 py-1 flex justify-between items-center flex-shrink-0">
+          <p className="font-bold">{title}</p>
+          <button onClick={onClose} className="font-bold text-lg leading-none p-1">&times;</button>
+        </div>
+        <div className="p-6 flex-grow min-h-0 flex flex-col">
+          <p className="text-lg mb-6 whitespace-pre-wrap">{message}</p>
+          <div className="flex justify-end space-x-4 mt-auto">
+            <button
+              onClick={onClose}
+              className="w-auto bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-2 px-6 border-b-4 border-yellow-800 hover:border-yellow-600 rounded transition-colors duration-200"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 // ===================================================================
 // COMPONENTE PRINCIPAL (App.tsx)
@@ -1346,6 +1380,7 @@ const App = () => {
   const [whiteboardDrawing, setWhiteboardDrawing] = useState(null);
   const [patientToDeleteId, setPatientToDeleteId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [alertMessage, setAlertMessage] = useState('');
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -1357,7 +1392,7 @@ const App = () => {
             setPatients(patientList);
         } catch (error) {
             console.error("Error fetching patients from Firestore:", error);
-            alert("Não foi possível carregar os dados dos pacientes.");
+            setAlertMessage("Não foi possível carregar os dados dos pacientes.");
         } finally {
             setIsLoading(false);
         }
@@ -1388,7 +1423,7 @@ const App = () => {
         handleNavigateHome();
     } catch (error) {
         console.error("Error adding patient to Firestore:", error);
-        alert("Erro ao salvar novo paciente.");
+        setAlertMessage("Erro ao salvar novo paciente.");
     }
   };
   
@@ -1406,7 +1441,7 @@ const App = () => {
         setCurrentView(View.PATIENT_DETAIL);
     } catch (error) {
         console.error("Error updating patient:", error);
-        alert("Erro ao atualizar os dados do paciente.");
+        setAlertMessage("Erro ao atualizar os dados do paciente.");
     }
   };
   
@@ -1423,7 +1458,7 @@ const App = () => {
         handleNavigateHome();
     } catch (error) {
         console.error("Error deleting patient:", error);
-        alert("Erro ao apagar o paciente.");
+        setAlertMessage("Erro ao apagar o paciente.");
     }
   };
 
@@ -1470,7 +1505,7 @@ const App = () => {
         setWhiteboardDrawing(null);
     } catch (error) {
         console.error("Error adding evolution:", error);
-        alert("Erro ao salvar a evolução.");
+        setAlertMessage("Erro ao salvar a evolução.");
     }
   };
 
@@ -1497,7 +1532,7 @@ const App = () => {
         setEvolutionToEditId(null);
     } catch (error) {
         console.error("Error updating evolution:", error);
-        alert("Erro ao atualizar a evolução.");
+        setAlertMessage("Erro ao atualizar a evolução.");
     }
   };
   
@@ -1514,7 +1549,7 @@ const App = () => {
         setCurrentView(View.PATIENT_DETAIL);
     } catch (error) {
         console.error("Error discharging patient:", error);
-        alert("Erro ao dar alta ao paciente.");
+        setAlertMessage("Erro ao dar alta ao paciente.");
     }
   };
 
@@ -1531,7 +1566,7 @@ const App = () => {
         handleNavigateHome(); 
     } catch (error) {
         console.error("Error archiving patient:", error);
-        alert("Erro ao arquivar o paciente.");
+        setAlertMessage("Erro ao arquivar o paciente.");
     }
   };
   
@@ -1547,7 +1582,7 @@ const App = () => {
         );
     } catch (error) {
         console.error("Error unarchiving patient:", error);
-        alert("Erro ao desarquivar o paciente.");
+        setAlertMessage("Erro ao desarquivar o paciente.");
     }
   };
 
@@ -1558,7 +1593,7 @@ const App = () => {
         setPatients(patients.map(p => p.id === patientId ? { ...p, evolutions } : p));
     } catch (error) {
         console.error("Error updating evolutions:", error);
-        alert("Erro ao atualizar as fotos da evolução.");
+        setAlertMessage("Erro ao atualizar as fotos da evolução.");
     }
   };
 
@@ -1576,19 +1611,19 @@ const App = () => {
       setCurrentView(View.PATIENT_LIST);
     } catch(error) {
       console.error("Error saving goals:", error);
-      alert("Erro ao salvar as metas.");
+      setAlertMessage("Erro ao salvar as metas.");
     }
   };
   
   const handleGenerateAnalysis = async () => {
     if (API_KEY === "SUA_CHAVE_API_AQUI") {
-      alert("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
+      setAlertMessage("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
       return;
     }
     if (!selectedPatientId) return;
     const patient = patients.find(p => p.id === selectedPatientId);
     if (!patient || patient.evolutions.length === 0) {
-      alert("Dados insuficientes para análise.");
+      setAlertMessage("Dados insuficientes para análise.");
       return;
     }
 
@@ -1654,7 +1689,7 @@ const App = () => {
   
   const handleAnalyzeAndAddPatients = async (imageDataUrl) => {
     if (API_KEY === "SUA_CHAVE_API_AQUI") {
-      alert("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
+      setAlertMessage("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
       return;
     }
     if (!imageDataUrl) return;
@@ -1708,12 +1743,12 @@ const App = () => {
             const patientSnapshot = await getDocs(query(collection(db, 'axonevo'), orderBy('admissionDate', 'desc')));
             const patientList = patientSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
             setPatients(patientList);
-            alert(`${newPatientsFromAI.length} pacientes foram adicionados com sucesso!`);
+            setAlertMessage(`${newPatientsFromAI.length} pacientes foram adicionados com sucesso!`);
         }
         handleNavigateHome();
     } catch (error) {
         console.error("Erro ao analisar imagem e adicionar pacientes:", error);
-        alert("Não foi possível analisar a imagem. Verifique o formato e tente novamente.");
+        setAlertMessage("Não foi possível analisar a imagem. Verifique o formato e tente novamente.");
         setCurrentView(View.PATIENT_LIST);
     } finally {
         setIsAnalyzingImage(false);
@@ -1722,7 +1757,7 @@ const App = () => {
   
   const handleAnalyzeEvolutionImage = async (imageDataUrl) => {
     if (API_KEY === "SUA_CHAVE_API_AQUI") {
-      alert("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
+      setAlertMessage("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
       return;
     }
     if (!imageDataUrl) return;
@@ -1750,11 +1785,11 @@ const App = () => {
       });
       const result = JSON.parse(response.text);
       setParsedEvolution(result);
-      alert("Formulário preenchido com os dados da imagem!");
+      setAlertMessage("Formulário preenchido com os dados da imagem!");
       setCurrentView(View.NEW_EVOLUTION_FORM);
     } catch (error) {
       console.error("Erro ao analisar imagem da evolução:", error);
-      alert("Não foi possível analisar a imagem da evolução. Tente novamente.");
+      setAlertMessage("Não foi possível analisar a imagem da evolução. Tente novamente.");
       setCurrentView(View.NEW_EVOLUTION_FORM);
     } finally {
       setIsAnalyzingImage(false);
@@ -1763,7 +1798,7 @@ const App = () => {
 
   const handleAnalyzeWhiteboard = async (imageForAnalysis, savedImageUrl) => {
     if (API_KEY === "SUA_CHAVE_API_AQUI") {
-      alert("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
+      setAlertMessage("Por favor, adicione sua chave de API do Google AI no arquivo HTML para usar esta funcionalidade.");
       return;
     }
     if (!imageForAnalysis || !savedImageUrl) return;
@@ -1792,11 +1827,11 @@ const App = () => {
       });
       const result = JSON.parse(response.text);
       setParsedEvolution(result);
-      alert("Formulário preenchido com os dados da lousa!");
+      setAlertMessage("Formulário preenchido com os dados da lousa!");
       setCurrentView(View.NEW_EVOLUTION_FORM);
     } catch (error) {
       console.error("Erro ao analisar imagem da lousa:", error);
-      alert("Não foi possível analisar a escrita. Tente novamente.");
+      setAlertMessage("Não foi possível analisar a escrita. Tente novamente.");
       setCurrentView(View.NEW_EVOLUTION_FORM);
       setWhiteboardDrawing(null);
     } finally {
@@ -1897,6 +1932,7 @@ const App = () => {
               onOpenWhiteboard={() => setCurrentView(View.WHITEBOARD_VIEW)}
               initialData={parsedEvolution}
               onDataParsed={() => setParsedEvolution(null)}
+              onShowAlert={setAlertMessage}
             />
           </TerminalWindow>
         ) : null;
@@ -1912,6 +1948,7 @@ const App = () => {
                         setEvolutionToEditId(null);
                     }}
                     evolutionToEdit={evolutionToEdit}
+                    onShowAlert={setAlertMessage}
                 />
             </TerminalWindow>
         ) : null;
@@ -1973,6 +2010,7 @@ const App = () => {
                     onAnalyze={handleAnalyzeWhiteboard}
                     onCancel={() => setCurrentView(View.NEW_EVOLUTION_FORM)}
                     isLoading={isAnalyzingImage}
+                    onShowAlert={setAlertMessage}
                 />
             </TerminalWindow>
         );
@@ -1990,6 +2028,11 @@ const App = () => {
         onConfirm={handleConfirmDeletePatient}
         title="C:\> TERMINATE PROCESS"
         message={`Tem certeza que deseja apagar permanentemente o paciente "${patientToDelete?.name}"?\n\nEsta ação não pode ser desfeita.`}
+      />
+      <AlertModal
+        isOpen={!!alertMessage}
+        onClose={() => setAlertMessage('')}
+        message={alertMessage}
       />
     </div>
   );
