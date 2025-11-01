@@ -1,9 +1,9 @@
-
-const CACHE_NAME = 'axonevo-pwa-v2';
+const CACHE_NAME = 'axonevo-pwa-v4';
 const URLS_TO_CACHE = [
   '/',
-  '/index.html',
-  '/manifest.json'
+  'index.html',
+  'manifest.json',
+  'icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
