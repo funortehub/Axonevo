@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0" />
     <title>Evolução de Pacientes - Terminal Med</title>
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
     <link rel="manifest" href="/manifest.json">
@@ -31,16 +31,16 @@
   <script type="importmap">
 {
   "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.0/client",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
-    "chart.js/auto": "https://aistudiocdn.com/chart.js@^4.5.1/auto",
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "@google/genai": "https://esm.sh/@google/generative-ai",
+    "chart.js/auto": "https://esm.sh/chart.js@4.4.2/auto",
     "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
     "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js",
-    "firebase/": "https://aistudiocdn.com/firebase@^12.5.0/",
-    "chart.js/": "https://aistudiocdn.com/chart.js@^4.5.1/",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/"
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.5.0/",
+    "chart.js/": "https://aistudiocdn.com/chart.js@^4.5.1/"
   }
 }
 </script>
@@ -50,14 +50,14 @@
     <script type="module">
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI as GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import Chart from 'chart.js/auto';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, doc, addDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 
-// --- START OF INLINED CODE ---
+// --- CÓDIGO DA APLICAÇÃO ---
 
-// Enums from types.ts
+// Enum para gerenciar as visualizações
 const View = {
   PATIENT_LIST: 0,
   PATIENT_DETAIL: 1,
@@ -73,7 +73,7 @@ const View = {
   EDIT_EVOLUTION_FORM: 11,
 };
 
-// Firebase Config from firebase/config.ts
+// Configuração do Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyA4bis9CVQkl1eJDfezsvUKTx1X_kFVT4M",
   authDomain: "axon-91d0b.firebaseapp.com",
@@ -85,7 +85,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Imgur Service from services/imgurService.ts
+// Serviço de Upload para Imgur
 const IMGUR_CLIENT_ID = '4ae8b96c539d446';
 const IMGUR_API_URL = 'https://api.imgur.com/3/image';
 const uploadImage = async (base64Image) => {
@@ -111,7 +111,7 @@ const uploadImage = async (base64Image) => {
     }
 };
 
-// --- START OF COMPONENTS ---
+// --- COMPONENTES REACT ---
 
 const BlinkingCursor = () => <span className="inline-block w-2 h-5 bg-green-400 ml-1 cursor-blink" />;
 
@@ -519,8 +519,7 @@ const WhiteboardView = ({ onAnalyze, onCancel, isLoading }) => {
   );
 };
 
-
-// --- MAIN APP COMPONENT ---
+// --- COMPONENTE PRINCIPAL (APP) ---
 
 const App = () => {
   const [patients, setPatients] = useState([]);
@@ -535,7 +534,20 @@ const App = () => {
   const [patientToDeleteId, setPatientToDeleteId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const GEMINI_API_KEY = "AIzaSyCz8u5Czz0OhCjSHh_e22qPMz02ahrGAss";
+  const API_KEY = "AIzaSyCz8u5Czz0OhCjSHh_e22qPMz02ahrGAss";
+  const genAI = new GoogleGenAI(API_KEY);
+  const generationConfig = {
+    temperature: 0.2,
+    topK: 1,
+    topP: 1,
+    maxOutputTokens: 2048,
+  };
+  const safetySettings = [
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+  ];
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -655,18 +667,20 @@ const App = () => {
     if (!patient || patient.evolutions.length === 0) return alert("Dados insuficientes.");
     setIsAnalysisLoading(true); setCurrentView(View.ANALYSIS_MODAL);
     const evolutionData = patient.evolutions.map(e => ({ date: e.date, vitalSigns: e.vitalSigns, notes: e.notes })).sort((a, b) => new Date(a.date) - new Date(b.date));
-    const prompt = `Analise os dados de evolução: ${JSON.stringify(evolutionData)}. Forneça um resumo e um aconselhamento em português como um JSON com chaves "summary" e "advice".`;
+    
+    const prompt = `Analise os seguintes dados de evolução de um paciente: ${JSON.stringify(evolutionData)}. Retorne um objeto JSON com duas chaves: "summary" (um resumo conciso da evolução em português) e "advice" (um aconselhamento baseado nos dados em português).`;
+    
     try {
-        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', contents: prompt,
-            config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { summary: { type: Type.STRING }, advice: { type: Type.STRING }}, required: ['summary', 'advice'] } },
-        });
-        const result = JSON.parse(response.text);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro-latest", generationConfig, safetySettings });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text().replace(/```json/g, '').replace(/```/g, '');
+        const analysis = JSON.parse(text);
+        
         const labels = evolutionData.map(e => new Date(e.date).toLocaleDateString('pt-BR'));
         const heartRate = evolutionData.map(e => parseInt(e.vitalSigns.heartRate) || null);
         const bloodPressure = evolutionData.map(e => { const p = e.vitalSigns.bloodPressure.split('/'); return p.length === 2 ? { systolic: parseInt(p[0]), diastolic: parseInt(p[1]) } : { systolic: null, diastolic: null }; });
-        setAnalysisData({ summary: result.summary, advice: result.advice, chartData: { labels, heartRate, systolic: bloodPressure.map(bp => bp.systolic), diastolic: bloodPressure.map(bp => bp.diastolic) } });
+        setAnalysisData({ summary: analysis.summary, advice: analysis.advice, chartData: { labels, heartRate, systolic: bloodPressure.map(bp => bp.systolic), diastolic: bloodPressure.map(bp => bp.diastolic) } });
     } catch (error) { console.error("Erro na análise por I.A.", error); setAnalysisData({ summary: 'Erro.', advice: 'Não foi possível conectar.', chartData: { labels: [], heartRate: [], systolic: [], diastolic: [] } });
     } finally { setIsAnalysisLoading(false); }
   };
@@ -675,21 +689,22 @@ const App = () => {
     if (!imageDataUrl) return;
     setIsAnalyzingImage(true); setCurrentView(View.CAMERA_VIEW); 
     const base64Data = imageDataUrl.split(',')[1];
-    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Data } };
-    const textPart = { text: `Analise a imagem da lista. Extraia nome, idade, quarto e leito. Retorne JSON com uma chave "patients" que é um array de objetos com chaves: "name", "age", "room", "bed".` };
+    
+    const prompt = `Analise a imagem da lista. Extraia nome, idade, quarto e leito para cada paciente. Retorne um objeto JSON com uma chave "patients" que é um array de objetos. Cada objeto deve ter as chaves: "name", "age", "room", e "bed".`;
+    
     try {
-        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', contents: { parts: [imagePart, textPart] },
-            config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { patients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, age: { type: Type.NUMBER }, room: { type: Type.STRING }, bed: { type: Type.STRING }}, required: ['name', 'age', 'room', 'bed']}}}, required: ['patients']}}
-        });
-        const result = JSON.parse(response.text);
-        if (Array.isArray(result.patients)) {
-            const promises = result.patients.map(p => addDoc(collection(db, 'axonevo'), { ...p, admissionDate: new Date().toISOString().split('T')[0], status: 'active', evolutions: [] }));
+        const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro-vision-latest", generationConfig, safetySettings });
+        const result = await model.generateContent([prompt, { inlineData: { mimeType: 'image/jpeg', data: base64Data } }]);
+        const response = await result.response;
+        const text = response.text().replace(/```json/g, '').replace(/```/g, '');
+        const analysis = JSON.parse(text);
+
+        if (Array.isArray(analysis.patients)) {
+            const promises = analysis.patients.map(p => addDoc(collection(db, 'axonevo'), { ...p, admissionDate: new Date().toISOString().split('T')[0], status: 'active', evolutions: [] }));
             await Promise.all(promises);
             const snapshot = await getDocs(query(collection(db, 'axonevo'), orderBy('admissionDate', 'desc')));
             setPatients(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-            alert(`${result.patients.length} pacientes adicionados!`);
+            alert(`${analysis.patients.length} pacientes adicionados!`);
         }
         handleNavigateHome();
     } catch (error) { console.error("Erro ao analisar imagem:", error); alert("Não foi possível analisar a imagem."); setCurrentView(View.PATIENT_LIST);
@@ -706,26 +721,16 @@ const App = () => {
         setCurrentView(View.EVOLUTION_CAMERA_VIEW);
     }
     const base64Data = imageDataUrl.split(',')[1];
-    const imagePart = { inlineData: { mimeType: fromWhiteboard ? 'image/png' : 'image/jpeg', data: base64Data } };
-    const textPart = { text: `Analise a imagem desta anotação. Extraia: Sinais Vitais (heartRate, bloodPressure, respiratoryRate, temperature, oxygenSaturation), Avaliação de Sistemas (cardiovascular, respiratory, digestive, neurological), Notas (notes) e Evolução Livre (freeText). Retorne como JSON. Use "" para valores não encontrados.` };
+    
+    const prompt = `Analise a imagem desta anotação de evolução. Extraia: Sinais Vitais (heartRate, bloodPressure, respiratoryRate, temperature, oxygenSaturation), Avaliação de Sistemas (cardiovascular, respiratory, digestive, neurological), Notas (notes) e Evolução Livre (freeText). Retorne como um objeto JSON. Use "" para valores não encontrados.`;
+    
     try {
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash', contents: { parts: [imagePart, textPart] },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              vitalSigns: { type: Type.OBJECT, properties: { heartRate: { type: Type.STRING }, bloodPressure: { type: Type.STRING }, respiratoryRate: { type: Type.STRING }, temperature: { type: Type.STRING }, oxygenSaturation: { type: Type.STRING } } },
-              assessment: { type: Type.OBJECT, properties: { cardiovascular: { type: Type.STRING }, respiratory: { type: Type.STRING }, digestive: { type: Type.STRING }, neurological: { type: Type.STRING } } },
-              notes: { type: Type.STRING }, freeText: { type: Type.STRING }
-            }
-          }
-        }
-      });
-      const result = JSON.parse(response.text);
-      setParsedEvolution(result);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro-vision-latest", generationConfig, safetySettings });
+      const result = await model.generateContent([prompt, { inlineData: { mimeType: fromWhiteboard ? 'image/png' : 'image/jpeg', data: base64Data } }]);
+      const response = await result.response;
+      const text = response.text().replace(/```json/g, '').replace(/```/g, '');
+      const analysis = JSON.parse(text);
+      setParsedEvolution(analysis);
       alert("Formulário preenchido com os dados da imagem!");
       setCurrentView(View.NEW_EVOLUTION_FORM);
     } catch (error) {
@@ -769,7 +774,7 @@ const App = () => {
 };
 
 
-// --- RENDER APP ---
+// --- INICIALIZAÇÃO DO REACT ---
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
